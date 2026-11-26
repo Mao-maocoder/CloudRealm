@@ -38,7 +38,7 @@ import { regionAt, type Region } from '../world/geo/regions';
 import { RoadNetwork } from '../world/biomes/roads';
 import { sampleSurfaceMaterial, sampleSwordRainSurface } from '../world/biomes/surface-query';
 import { Terrain } from '../world/terrain/terrain';
-import { Wildlife } from '../world/wildlife/wildlife';
+import { Wildlife, giantSwordSplashRadius } from '../world/wildlife/wildlife';
 
 function nextAnimationFrame(): Promise<void> {
     return new Promise(resolve => requestAnimationFrame(() => resolve()));
@@ -93,6 +93,7 @@ export class Game {
     private nightAnnounced = false;
     private lastShownTier = 0;
     private nascentAssetsPromise?: Promise<void>;
+    private senseCombatTarget?: ReturnType<Wildlife['combatTarget']>;
     private readonly inkAnchorWorld = new T.Vector3();
     private readonly inkCamRight = new T.Vector3();
     paused = false;
@@ -125,7 +126,7 @@ export class Game {
             return;
         }
         if (!this.vitals.spendSensePulse(this.time)) {
-            this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+            this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             return;
         }
         const origin = this.divineSense.astralActive ? this.camera.position : this.player.position;
@@ -145,7 +146,7 @@ export class Game {
             parts.push(`⚠ 触怒 ${report.alertedLeaderName ?? '高阶妖兽'} 反警觉！`);
         }
         this.vitals.announce(parts.join(' · '), this.time, report.alertedHighCount > 0 ? 3.8 : 3.0);
-        this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+        this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
     }
 
     private toggleAstralProjection() {
@@ -155,7 +156,7 @@ export class Game {
             return;
         }
         if (!this.vitals.canStartAstral(this.time)) {
-            this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+            this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             return;
         }
         void this.ensureNascentAssetsLoaded();
@@ -181,7 +182,7 @@ export class Game {
             this.time,
             3.4,
         );
-        this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+        this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
     }
 
     private exitAstralProjection(notice?: string) {
@@ -199,7 +200,7 @@ export class Game {
         this.player.syncRender(1);
         if (notice) {
             this.vitals.announce(notice, this.time, 2.4);
-            this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+            this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
         }
     }
 
@@ -251,7 +252,7 @@ export class Game {
             this.hud.setCinemaOverlay(false);
             this.hud.showRealmInkBadge(this.vitals.stats.fullLabel, this.vitals.stats.realmColor, 4.6);
             this.vitals.announce('元婴初成 · 肉身御空、踏空而行、极速遁光已开启！', this.time, 4.5);
-            this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+            this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
         });
     }
 
@@ -297,6 +298,7 @@ export class Game {
             sampleSurfaceMaterial,
             (from, to) => this.wildlife.giantSwordContact(from, to),
             (point, directHit) => this.wildlife.giantSwordBlast(point, directHit),
+            giantSwordSplashRadius,
         );
         this.input = new Input(this.renderer.domElement);
         this.swordArray = new SwordArray(
@@ -419,22 +421,22 @@ export class Game {
         this.hud.bindCultivation(
             () => {
                 this.triggerBreakthrough();
-                this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             },
             realmIndex => {
                 this.vitals.setRealm(realmIndex, 0, this.time);
                 this.syncFlightProfile();
-                this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             },
             () => {
                 this.vitals.fillToBreakthrough(this.time);
                 this.syncFlightProfile();
-                this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             },
             () => {
                 this.vitals.advanceOneTier(this.time);
                 this.syncFlightProfile();
-                this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             },
             () => {
                 const isNight = this.atmosphere.dayNight.state.nightFactor > 0.4;
@@ -445,7 +447,7 @@ export class Game {
                     this.time,
                     2.8,
                 );
-                this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             },
             () => {
                 void this.ensureNascentAssetsLoaded();
@@ -455,7 +457,7 @@ export class Game {
                     this.time,
                     3.2,
                 );
-                this.hud.updateVitals(this.vitals.snapshot(), undefined, this.vitals.activeNotice(this.time));
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
                 return on;
             },
             () => {
@@ -469,7 +471,7 @@ export class Game {
             () => this.triggerDivineSensePulse(),
             () => this.toggleAstralProjection(),
         );
-        this.hud.updateVitals(this.vitals.snapshot(), undefined, '');
+        this.hud.updateVitals(this.vitals.snapshot(), '');
         this.hud.bindTimeControl(
             hours => this.atmosphere.dayNight.setHours(hours),
             auto => { this.atmosphere.dayNight.auto = auto; },
@@ -842,7 +844,7 @@ export class Game {
         this.swordArray.update(dt);
         this.follow.update(
             dt,
-            this.worldMap.open ? undefined : this.swordArray.framing,
+            this.worldMap.open ? undefined : this.giantSword.framing ?? this.swordArray.framing,
             this.nascentBreakthrough.cameraPose,
             this.divineSense.astralActive
                 ? { origin: this.divineSense.bodyPosition, radius: this.divineSense.astralRadius }
@@ -862,7 +864,8 @@ export class Game {
             this.fireball.release(this.camera, this.player.position, this.fireballPower);
             this.fireballPower = undefined;
         }
-        this.giantSword.updateCast(avatar.giantSwordTime, this.camera, this.player.position, heading);
+        this.giantSword.updateCast(avatar.giantSwordTime, this.camera, this.player.position, heading, this.vitals.realmIndex >= 3,
+            this.divineSense.insightActive ? this.senseCombatTarget : undefined);
         this.giantSword.update(dt);
         this.swordEffects.update(dt, this.player.boosting && this.player.avatar.riding && !this.player.voidFlying && canInteract);
         this.voidFlight.update(
@@ -923,6 +926,7 @@ export class Game {
         const lockedBeast = (canInteract || this.divineSense.astralActive)
             ? this.wildlife.combatTarget(center, this.camera, senseLockRange, this.divineSense.insightActive)
             : undefined;
+        this.senseCombatTarget = this.divineSense.insightActive ? lockedBeast : undefined;
         this.divineSense.update(
             dt,
             this.camera,
@@ -1028,7 +1032,7 @@ export class Game {
             this.fps = 1000 / Math.max(0.1, this.frameMs);
             const speed = this.player.velocity.length();
             this.hud.setOmenActive(this.celestialOmen.active);
-            this.hud.updateVitals(this.vitals.snapshot(), lockedBeast?.displayName, this.vitals.activeNotice(this.time));
+            this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             this.hud.speed.textContent = (speed * 3.6).toFixed(0);
             this.hud.altitude.textContent = (detachedCam ? this.camera.position.y : this.player.position.y).toFixed(0);
             this.hud.mode.textContent = this.divineSense.astralActive ? `神识离体 · ${senseStats.senseStageName}`

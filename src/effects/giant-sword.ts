@@ -2,6 +2,7 @@ import * as T from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { traceFireballWorld, type SampleGround } from './fireball-trajectory';
 import type { SpellLightPool } from './spell-lights';
+import { NascentGiantSword } from './nascent-giant-sword';
 
 const swordModelUrl = new URL('../../resource/skill/giant-sword/GiantSword.glb', import.meta.url).href;
 const impactModelUrl = new URL('../../resource/skill/giant-sword/GiantSword_Impact.glb', import.meta.url).href;
@@ -45,12 +46,13 @@ export function giantSwordAim(
     caster: T.Vector3,
     sampleGround: SampleGround,
     traceCreature: (from: T.Vector3, to: T.Vector3) => number | undefined,
+    maxRange = MAX_AIM_RANGE,
 ): GiantSwordAimResult {
     const ray = camera.getWorldDirection(new T.Vector3()).normalize();
     const origin = camera.getWorldPosition(new T.Vector3());
     const startDist = Math.max(0, new T.Vector3().subVectors(caster, origin).dot(ray));
     const nearStart = origin.clone().addScaledVector(ray, Math.max(0.5, startDist - 0.5));
-    const farEnd = origin.clone().addScaledVector(ray, startDist + MAX_AIM_RANGE);
+    const farEnd = origin.clone().addScaledVector(ray, startDist + maxRange);
 
     const worldHit = traceFireballWorld(nearStart, farEnd, sampleGround, 0.04);
     const creatureT = traceCreature(nearStart, farEnd);
@@ -418,6 +420,7 @@ function disposeGltf(model: GLTF) {
 }
 
 export class GiantSword {
+    private readonly nascent: NascentGiantSword;
     private template?: GLTF;
     private impactTemplate?: GLTF;
     private impactGeos: ImpactMeshGeos = {};
@@ -491,7 +494,9 @@ export class GiantSword {
         private readonly sampleGround: SampleGround,
         private readonly traceCreature: (from: T.Vector3, to: T.Vector3) => number | undefined,
         private readonly blast: (point: T.Vector3, directHit: boolean) => void,
+        splashRadius = 6.8,
     ) {
+        this.nascent = new NascentGiantSword(scene, sampleGround, traceCreature, blast, splashRadius);
         this.castGroup.name = 'GiantSword_CastGroup';
         this.castGroup.visible = false;
         this.scene.add(this.castGroup);
@@ -529,9 +534,12 @@ export class GiantSword {
         this.scene.add(this.trailMesh);
     }
 
+    get framing() { return this.nascent.framing; }
+
     async load() {
         const loader = new GLTFLoader();
         await Promise.all([
+            this.nascent.load(loader),
             loader.loadAsync(swordModelUrl).then(gltf => {
                 if (this.disposed) {
                     disposeGltf(gltf);
@@ -705,9 +713,21 @@ export class GiantSword {
         camera: T.Camera,
         casterPos: T.Vector3,
         heading: number,
+        nascent = false,
+        lockedTarget?: { position: T.Vector3; ready: boolean; health: number },
     ) {
+        if (nascent && clipTime !== undefined) {
+            if (this.activeCast) this.endCast();
+            this.nascent.updateCast(clipTime, casterPos, heading, giantSwordLaunchTime,
+                () => this.nascentLanding(camera, casterPos, heading),
+                lockedTarget && (() => lockedTarget.ready && lockedTarget.health > 0 ? lockedTarget.position : undefined));
+            this.setOriginalSwordHidden(clipTime >= giantSwordFlightStart);
+            return;
+        }
+        this.nascent.cancelCast();
         if (clipTime === undefined) {
             if (this.activeCast) this.endCast();
+            else this.setOriginalSwordHidden(false);
             return;
         }
 
@@ -873,6 +893,20 @@ export class GiantSword {
             this.phantomOpacity.value = 0;
             this.burstRingOpacity.value = 0;
         }
+    }
+
+    private nascentLanding(camera: T.Camera, casterPos: T.Vector3, heading: number) {
+        const ray = camera.getWorldDirection(this.tmpA);
+        const range = MAX_AIM_RANGE / Math.max(.12, Math.hypot(ray.x, ray.z));
+        const aim = giantSwordAim(camera, casterPos, this.sampleGround, () => undefined, range);
+        const target = aim.target;
+        if (!aim.hitSurface) {
+            this.tmpA.y = 0;
+            if (this.tmpA.lengthSq() < 1e-6) this.tmpA.set(Math.sin(heading), 0, -Math.cos(heading));
+            target.copy(casterPos).addScaledVector(this.tmpA.normalize(), 16);
+        }
+        target.y = this.sampleGround(target.x, target.z, Math.max(target.y, casterPos.y) + .2).height;
+        return target;
     }
 
     private endCast() {
@@ -1069,6 +1103,7 @@ export class GiantSword {
     }
 
     update(dt: number) {
+        this.nascent.update(dt);
         this.timeUniform.value += dt;
 
         // Advance launched Giant Sword projectiles
@@ -1258,6 +1293,7 @@ export class GiantSword {
     }
 
     clear() {
+        this.nascent.clear();
         this.endCast();
         for (const p of this.projectiles) this.removeProjectile(p);
         for (const imp of this.impacts) this.removeImpact(imp);
@@ -1266,6 +1302,7 @@ export class GiantSword {
     dispose() {
         this.disposed = true;
         this.clear();
+        this.nascent.dispose();
         this.castGroup.removeFromParent();
         this.trailMesh.removeFromParent();
         this.trailGeometry.dispose();

@@ -49,7 +49,7 @@ export class FollowCamera {
 
     update(
         dt: number,
-        swordArray?: { center: T.Vector3; weight: number; radius: number },
+        swordArray?: { center: T.Vector3; weight: number; radius: number; fullWeightWithin?: number; fadeBeyond?: number },
         cinematic?: { position: T.Vector3; target: T.Vector3; fov?: number },
         astral?: AstralCameraState,
         senseInsight = false,
@@ -147,7 +147,7 @@ export class FollowCamera {
         if (swordArray) {
             const foot = this.player.avatar.position;
             const separation = Math.hypot(foot.x - swordArray.center.x, foot.z - swordArray.center.z);
-            const weight = swordArray.weight * (1 - T.MathUtils.smoothstep(separation, 4, 10));
+            const weight = swordArray.weight * (1 - T.MathUtils.smoothstep(separation, swordArray.fullWeightWithin ?? 4, swordArray.fadeBeyond ?? 10));
             const standoff = swordArray.radius + 18;
             this.wide.set(
                 foot.x - standoff * Math.sin(this.input.yaw),

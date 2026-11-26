@@ -9,6 +9,8 @@ import type { SwordRainContact } from '../../effects/sword-array';
 import type { SpeciesId } from './wildlife-habitat';
 import { Creature, WildlifeSimulation, type DivineSensePulseReport, type WildlifeClip } from './wildlife-simulation';
 
+export const giantSwordSplashRadius = 6.8;
+
 export type SenseThreatLevel = 'low' | 'equal' | 'high';
 
 export interface SenseMarkerProjection {
@@ -728,20 +730,24 @@ export class Wildlife {
     }
 
     giantSwordContact(from: T.Vector3, to: T.Vector3) {
-        const dx = to.x - from.x, dz = to.z - from.z;
-        const length = Math.max(.0001, dx * dx + dz * dz);
+        const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+        const flatLength = dx * dx + dz * dz;
+        const length = Math.max(.0001, flatLength);
+        const vertical = flatLength < .0001 && Math.abs(dy) > .0001;
         let contact: number | undefined;
         let nearest = Infinity;
         for (const creature of this.simulation.active) {
             if (!creature.ready || !creature.health) continue;
             const center = creature.position, profile = creature.profile;
             const x = center.x - from.x, z = center.z - from.z;
-            const along = T.MathUtils.clamp((x * dx + z * dz) / length, 0, 1);
+            const bottom = center.y - .65, top = center.y + profile.height + .85;
+            const entryY = dy < 0 ? top : bottom;
+            const along = T.MathUtils.clamp(vertical ? (entryY - from.y) / dy : (x * dx + z * dz) / length, 0, 1);
             const y = T.MathUtils.lerp(from.y, to.y, along);
-            if (y < center.y - .65 || y > center.y + profile.height + .85) continue;
+            if (y < bottom - 1e-6 || y > top + 1e-6) continue;
             const distance = Math.hypot(x - dx * along, z - dz * along);
             if (distance > profile.radius + .95) continue;
-            const rank = along * Math.sqrt(length) + distance;
+            const rank = vertical ? along * Math.abs(dy) + distance * .01 : along * Math.sqrt(length) + distance;
             if (rank >= nearest) continue;
             this.hitTarget.set(center.x, T.MathUtils.clamp(y, center.y, center.y + profile.height), center.z);
             if (clipStructureCamera(from, this.hitTarget) !== 1) continue;
@@ -752,7 +758,7 @@ export class Wildlife {
     }
 
     giantSwordBlast(point: T.Vector3, directHit = false) {
-        const splashRadius = 6.8;
+        const splashRadius = giantSwordSplashRadius;
         const directDamage = 95;
         const splashMax = 72;
         const splashMin = 38;
