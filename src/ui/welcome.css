@@ -1,0 +1,215 @@
+.welcome {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(#226e9f, #81bfdf 55%, #164c40);
+  color: #fff0d3;
+  font: 14px 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+
+.welcome[hidden] { display: none; }
+.welcome:not([hidden]) ~ .world-map { visibility: hidden; }
+
+.welcome-art, .welcome::before {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.welcome-art {
+  z-index: -2;
+  object-fit: cover;
+  object-position: 63% 50%;
+}
+
+.welcome::before {
+  content: '';
+  z-index: -1;
+  background:
+    radial-gradient(ellipse at 14% 18%, #0d4d7178, transparent 52%),
+    linear-gradient(0deg, #072227f0, #07222782 15%, transparent 42%);
+}
+
+#welcome-title {
+  position: absolute;
+  margin: 0;
+  left: clamp(18px, 3.2vw, 72px);
+  top: clamp(16px, 4.4vh, 56px);
+  pointer-events: none;
+  user-select: none;
+}
+
+#welcome-title img {
+  display: block;
+  width: clamp(290px, min(35.5vw, 62vh), 610px);
+  height: auto;
+  filter: drop-shadow(0 6px 24px #092c4d8c);
+}
+
+.welcome-entry {
+  position: absolute;
+  right: 0;
+  bottom: max(5.5%, calc(env(safe-area-inset-bottom) + 16px));
+  left: 0;
+  display: grid;
+  justify-items: center;
+  text-shadow: 0 1px 6px #061f27;
+}
+
+.welcome-start {
+  display: block;
+  width: clamp(248px, 23vw, 380px);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  filter: drop-shadow(0 5px 16px #08232899);
+  transition: transform .22s ease, filter .25s ease;
+}
+
+.welcome-start[hidden] { display: none; }
+
+.welcome-start img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+.welcome[data-state='ready'] .welcome-start { animation: welcome-start .32s ease-out both; }
+
+@keyframes welcome-start {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.welcome-start:enabled:hover {
+  transform: translateY(-2px) scale(1.02);
+  filter: drop-shadow(0 0 20px #ffe5a8a6) brightness(1.05);
+}
+
+.welcome-start:enabled:active {
+  transform: translateY(1px) scale(.985);
+  filter: drop-shadow(0 3px 12px #08232899) brightness(.98);
+}
+
+.welcome-start:focus-visible {
+  outline: 2px solid #fff2cc;
+  outline-offset: 6px;
+  border-radius: 999px;
+}
+
+.welcome-loading {
+  width: min(720px, 88vw);
+}
+
+.welcome-loading[hidden] { display: none; }
+
+.welcome-track {
+  position: relative;
+  width: 100%;
+}
+
+.welcome-track progress {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.welcome-bar-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 3px 12px #051c2499);
+}
+
+.welcome-fill-bar {
+  transform-origin: 31px 34px;
+  transform: scaleX(var(--welcome-ratio, 0));
+  transition: transform .32s ease-out;
+}
+
+.welcome-light-tip {
+  transform: translateX(var(--welcome-tip-x, 35px));
+  opacity: var(--welcome-tip-opacity, 0);
+  transition: transform .32s ease-out, opacity .25s ease;
+}
+
+.welcome[data-state='loading'] .welcome-light-tip ellipse {
+  animation: welcome-tip-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes welcome-tip-pulse {
+  0%, 100% { opacity: .82; }
+  50% { opacity: 1; }
+}
+
+.welcome-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+  padding: 0 6.2%;
+  color: #fff0d3;
+  font-family: 'STKaiti', 'KaiTi', 'Kaiti SC', 'Songti SC', 'Microsoft YaHei', serif;
+  font-size: clamp(13px, 1.15vw, 17px);
+  letter-spacing: .08em;
+}
+
+.welcome-status-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.welcome-spinner {
+  width: clamp(18px, 1.7vw, 24px);
+  height: clamp(18px, 1.7vw, 24px);
+  flex: 0 0 auto;
+}
+
+.welcome[data-state='loading'] .welcome-spinner {
+  animation: welcome-spin 1.8s linear infinite;
+}
+
+.welcome[data-state='error'] .welcome-spinner {
+  opacity: .45;
+}
+
+@keyframes welcome-spin {
+  to { transform: rotate(360deg); }
+}
+
+#welcome-percent {
+  font-variant-numeric: tabular-nums;
+  font-family: 'Songti SC', 'STSong', 'Georgia', serif;
+}
+
+.welcome[data-state='error'] #welcome-status { color: #ffd4b8; }
+
+@media (max-aspect-ratio: 1/1) {
+  .welcome-art { object-position: 70% 50%; }
+  #welcome-title {
+    left: 50%;
+    top: 7%;
+    transform: translateX(-50%);
+  }
+  #welcome-title img { width: min(82vw, 440px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-start, .welcome-fill-bar, .welcome-light-tip { transition: none; }
+  .welcome[data-state='ready'] .welcome-start,
+  .welcome[data-state='loading'] .welcome-light-tip ellipse,
+  .welcome[data-state='loading'] .welcome-spinner { animation: none; }
+}

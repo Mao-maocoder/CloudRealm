@@ -1,0 +1,6 @@
+import { bounds, seed, ridges, rivers, mainRiver, riverX, lakes, waterfalls } from './geo-core';
+import { worldHeightAt, geographyGrid, roadDistanceAt } from './geography';
+import { roadLinks, roadNodes, plannedRoads, roadConnectivity } from './route-plan';
+import { peakland, formations } from './peakland-plan';
+export { worldHeightAt, riverX, mainRiver, roadDistanceAt };
+export const WorldPlan = Object.freeze({ seed, bounds: Object.freeze(bounds), Terrain: { version: 4, coordinateSystem: 'X-east Y-up Z-south', heightAt: worldHeightAt, grid: geographyGrid, gridStep: 8 }, Biomes: [{ id: 'valley', x: 80, z: 180 }, { id: 'sakura', x: 690, z: -460 }, { id: 'autumn', x: -740, z: -470 }, { id: 'bamboo', x: -640, z: 620 }, { id: 'alpine', x: 20, z: -1680 }, { id: 'lake', x: 390, z: 1050 }, { id: peakland.id, ...peakland.center }], Mountains: ridges, Peakland: { ...peakland, formations }, RiverNetwork: rivers, Lakes: lakes, Waterfalls: waterfalls, RoadNetwork: { authoritative: true, nodes: roadNodes, edges: roadLinks, get routes() { return plannedRoads(); }, validate: roadConnectivity }, Landmarks: roadNodes.filter(n => n.type === 'Landmark'), Settlements: roadNodes.filter(n => n.type === 'Settlement') });

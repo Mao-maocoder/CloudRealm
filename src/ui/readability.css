@@ -1,0 +1,5 @@
+/* Readability overrides harmonized with the jade-gold Xianxia HUD. */
+.world-map .map-toggle,
+.world-map .region-name {
+  display: none !important;
+}

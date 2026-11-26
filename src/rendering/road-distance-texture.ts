@@ -1,0 +1,5 @@
+import * as T from 'three';import{roadDistanceAt}from '../world/geo/geography';
+let distances:Float32Array|undefined;
+/** Road SDF resolution is independent of terrain mesh density. */
+export function makeRoadDistanceTexture(){if(!distances){distances=new Float32Array(1025*1025);for(let z=0;z<1025;z++)for(let x=0;x<1025;x++)distances[z*1025+x]=Math.min(64,roadDistanceAt(-2048+x*4,-2400+z*4));}const texture=new T.DataTexture(distances,1025,1025,T.RedFormat,T.FloatType);texture.minFilter=texture.magFilter=T.NearestFilter;texture.needsUpdate=true;return texture;}
+export const roadDistanceGLSL=`uniform sampler2D uRoadDistance;float plannedRoadDistance(vec2 p){vec2 q=clamp((p-vec2(-2048.,-2400.))/4.,vec2(0.),vec2(1024.)),i=min(floor(q),vec2(1023.)),f=q-i,uv=(i+.5)/1025.;float a=texture2D(uRoadDistance,uv).r,b=texture2D(uRoadDistance,uv+vec2(1./1025.,0.)).r,c=texture2D(uRoadDistance,uv+vec2(0.,1./1025.)).r,d=texture2D(uRoadDistance,uv+vec2(1./1025.)).r;return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}`;

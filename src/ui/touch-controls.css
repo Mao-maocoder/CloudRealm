@@ -1,0 +1,163 @@
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.touch-stick-zone {
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: 156px;
+  height: 156px;
+  pointer-events: auto;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+}
+
+.touch-stick-base {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(14, 48, 54, .34) 0%, rgba(8, 28, 34, .58) 100%);
+  border: 1.5px solid rgba(235, 211, 151, .42);
+  box-shadow: 0 6px 18px rgba(4, 16, 20, .42);
+  display: grid;
+  place-items: center;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.touch-stick-base.active {
+  border-color: rgba(235, 211, 151, .82);
+}
+
+.touch-stick-base.sprint {
+  border-color: #7cf5e2;
+  box-shadow: 0 0 16px rgba(108, 244, 215, .45);
+}
+
+.touch-stick-ring {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  border: 1px dashed rgba(235, 211, 151, .24);
+  pointer-events: none;
+}
+
+.touch-stick-knob {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff6d6 0%, #dfc07c 58%, #987638 100%);
+  border: 1.5px solid rgba(255, 250, 230, .9);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .52);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.touch-action-pad {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: 210px;
+  height: 204px;
+  pointer-events: none;
+}
+
+.touch-btn {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  border-radius: 50%;
+  padding: 0;
+  border: 1.5px solid rgba(235, 211, 151, .65);
+  background: rgba(10, 38, 44, .82);
+  color: #fff6df;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: 0 6px 16px rgba(4, 16, 20, .55);
+  transition: transform .1s ease, border-color .15s ease;
+}
+
+.touch-btn img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: .88;
+  pointer-events: none;
+}
+
+.touch-btn span {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  color: #fff8e6;
+  text-shadow: 0 1px 4px #000, 0 0 6px rgba(0, 0, 0, .9);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.touch-glyph {
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  color: #fae4a6;
+  margin-bottom: 10px;
+}
+
+.touch-btn.pressed {
+  transform: scale(.92);
+  border-color: #9effec;
+}
+
+.touch-btn.active,
+.touch-btn.charged {
+  border-color: #6cf4d7;
+  box-shadow: 0 0 16px rgba(108, 244, 215, .75);
+}
+
+.primary-attack-btn {
+  right: 6px;
+  bottom: 8px;
+  width: 78px;
+  height: 78px;
+  border-width: 2px;
+  border-color: rgba(250, 228, 166, .88);
+}
+
+.primary-attack-btn span {
+  bottom: 6px;
+  font-size: 11px;
+}
+
+.sub-btn {
+  width: 50px;
+  height: 50px;
+}
+
+.wave-btn { right: 98px; bottom: 8px; }
+.dash-btn { right: 90px; bottom: 70px; }
+.jump-btn { right: 44px; bottom: 112px; }
+.flight-btn { right: 0px; bottom: 102px; }
+.descend-btn { right: 142px; bottom: 52px; width: 46px; height: 46px; }
+
+@media (max-width: 480px) {
+  .touch-stick-zone { width: 136px; height: 136px; left: 10px; bottom: 12px; }
+  .touch-stick-base { width: 104px; height: 104px; }
+  .touch-stick-knob { width: 40px; height: 40px; }
+  .touch-action-pad { right: 10px; bottom: 12px; transform: scale(.9); transform-origin: bottom right; }
+}
