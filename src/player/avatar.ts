@@ -8,6 +8,7 @@ type Gait = 'Idle' | 'Walk' | 'Run';
 type Motion = Gait | 'Jump_Start' | 'Jump_Loop' | 'Jump_Land' |
     'Fly_Mount' | 'Fly_Loop' | 'Nascent_Fly_Loop' | 'Nascent_Hover_Loop' |
     'Nascent_Meditate_Loop' | 'Nascent_Breakthrough_Burst' |
+    'Pressure_Suppress_Loop' |
     'Swim_Idle_Loop' | 'Swim_Fwd_Loop' |
     'Sword_Draw' | 'Sword_Ready' | 'Sword_Walk' | 'Sword_Run' |
     'Attack_Slash' | 'Sword_Sheathe' |
@@ -16,7 +17,7 @@ type Motion = Gait | 'Jump_Start' | 'Jump_Loop' | 'Jump_Land' |
 export type Attack = 'light' | 'heavy';
 type ActionCue = 'light-hit' | 'heavy-hit' | 'sword-array' | 'fireball';
 
-const loops = new Set<Motion>(['Idle', 'Walk', 'Run', 'Jump_Loop', 'Fly_Loop', 'Nascent_Fly_Loop', 'Nascent_Hover_Loop', 'Nascent_Meditate_Loop', 'Nascent_Breakthrough_Burst', 'Swim_Idle_Loop', 'Swim_Fwd_Loop', 'Sword_Ready', 'Sword_Walk', 'Sword_Run']);
+const loops = new Set<Motion>(['Idle', 'Walk', 'Run', 'Jump_Loop', 'Fly_Loop', 'Nascent_Fly_Loop', 'Nascent_Hover_Loop', 'Nascent_Meditate_Loop', 'Nascent_Breakthrough_Burst', 'Pressure_Suppress_Loop', 'Swim_Idle_Loop', 'Swim_Fwd_Loop', 'Sword_Ready', 'Sword_Walk', 'Sword_Run']);
 const upperBody = new Set<Motion>(['Idle', 'Walk', 'Run', 'Light_Draw', 'Light_Slash', 'Attack_Slash', 'Sword_Sheathe', 'Fireball_Cast']);
 const gaitRates: Record<Gait, number> = { Idle: 1, Walk: .8, Run: 1.15 };
 const slashContact = 10 / 30;
@@ -363,6 +364,19 @@ export class Avatar extends T.Group {
         }
     }
 
+    installPressureClip({ animations }: GLTF) {
+        if (this.disposed) return;
+        const source = T.AnimationClip.findByName(animations, 'Pressure_Suppress_Loop') ?? animations[0];
+        if (!source) return;
+        const clip = source.clone();
+        clip.name = 'Pressure_Suppress_Loop';
+        if (this.mixer) {
+            this.actions.set('Pressure_Suppress_Loop', this.mixer.clipAction(clip));
+        } else {
+            this.pendingNascentClips.push(clip);
+        }
+    }
+
     install({ scene, animations }: GLTF) {
         if (this.disposed) {
             this.releaseModel(scene);
@@ -636,7 +650,7 @@ export class Avatar extends T.Group {
         voidMode = false,
         skyWalking = false,
         hideBody = false,
-        ritualPose: 'none' | 'meditate' | 'burst' = 'none',
+        ritualPose: 'none' | 'meditate' | 'burst' | 'pressure' = 'none',
     ): ActionCue | undefined {
         if (this.model) this.model.visible = !hideBody;
         if (!this.mixer) return;
@@ -654,10 +668,12 @@ export class Avatar extends T.Group {
         if (inRitual) {
             this.swordDrawn = false;
             this.clearCombat();
-            const want: Motion = ritualPose === 'meditate'
-                ? (this.actions.has('Nascent_Meditate_Loop') ? 'Nascent_Meditate_Loop' : 'Idle')
-                : (this.actions.has('Nascent_Breakthrough_Burst') ? 'Nascent_Breakthrough_Burst' : 'Nascent_Hover_Loop');
-            if (this.motion !== want) this.play(want, .36);
+            const want: Motion = ritualPose === 'pressure'
+                ? (this.actions.has('Pressure_Suppress_Loop') ? 'Pressure_Suppress_Loop' : 'Idle')
+                : ritualPose === 'meditate'
+                    ? (this.actions.has('Nascent_Meditate_Loop') ? 'Nascent_Meditate_Loop' : 'Idle')
+                    : (this.actions.has('Nascent_Breakthrough_Burst') ? 'Nascent_Breakthrough_Burst' : 'Nascent_Hover_Loop');
+            if (this.motion !== want) this.play(want, ritualPose === 'pressure' ? .16 : .36);
             return;
         }
 

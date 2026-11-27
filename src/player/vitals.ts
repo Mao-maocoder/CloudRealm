@@ -335,13 +335,13 @@ export class PlayerVitals {
         return true;
     }
 
-    receiveHit(rawDamage: number, attackerName: string, now: number): boolean {
-        if (now - this.lastInjury < .72 || this.hp <= 0) return false;
+    receiveHit(rawDamage: number, attackerName: string, now: number, minCooldown = .72): boolean {
+        if (now - this.lastInjury < minCooldown || this.hp <= 0) return false;
         const scaledRaw = rawDamage * 2.6;
         const finalDamage = mitigateIncomingDamage(scaledRaw, this.stats.def);
         this.hp = Math.max(0, this.hp - finalDamage);
         this.lastInjury = now;
-        this.announce(`${attackerName}击中 · −${finalDamage}`, now, 1.7);
+        this.announce(`${attackerName} · −${finalDamage}`, now, minCooldown < 0.4 ? 1.1 : 1.7);
         return true;
     }
 

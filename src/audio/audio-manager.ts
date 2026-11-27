@@ -1,6 +1,7 @@
 import type { GroundSample } from '../effects/fireball-trajectory';
 
 const BGM_WORLD_URL = new URL('../../resource/audio/bgm_world.mp3', import.meta.url).href;
+const DRAGON_BACKLASH_URL = new URL('../../resource/audio/dragon_backlash.mp3', import.meta.url).href;
 
 export type SurfaceKind = GroundSample['kind'];
 
@@ -26,6 +27,8 @@ export class AudioManager {
     private bgmGain?: GainNode;
     private sfxGain?: GainNode;
     private noiseBuffer?: AudioBuffer;
+    private dragonBacklashBuffer?: AudioBuffer;
+    private dragonBacklashLoading = false;
 
     // World BGM element
     private bgmEl?: HTMLAudioElement;
@@ -189,6 +192,7 @@ export class AudioManager {
             this.bossDroneGain = dg;
 
             this.applyGains();
+            this.preloadDragonBacklash(ctx);
         }
 
         if (this.ctx.state === 'suspended') {
@@ -525,15 +529,38 @@ export class AudioManager {
         this.spawnTone(ctx, now + 0.16, 0.12, 'sine', 56, 30, v * 0.75);
     }
 
+    private preloadDragonBacklash(ctx: AudioContext) {
+        if (this.dragonBacklashBuffer || this.dragonBacklashLoading) return;
+        this.dragonBacklashLoading = true;
+        void fetch(DRAGON_BACKLASH_URL)
+            .then(res => res.arrayBuffer())
+            .then(buf => ctx.decodeAudioData(buf))
+            .then(decoded => {
+                if (!this.disposed) this.dragonBacklashBuffer = decoded;
+            })
+            .catch(() => {
+                this.dragonBacklashLoading = false;
+            });
+    }
+
     playDragonSenseBacklash() {
         const ctx = this.ready();
-        if (!ctx) return;
-        const now = ctx.currentTime;
-        // Seismic soul-shatter boom + metallic ear-ring + blood roar
-        this.spawnTone(ctx, now, 1.35, 'sine', 120, 22, 0.72);
-        this.spawnTone(ctx, now, 1.15, 'sawtooth', 94, 42, 0.44, 310);
-        this.spawnNoiseBurst(ctx, now, 0.85, 'lowpass', 920, 0.65, 0.56);
-        this.spawnTone(ctx, now + 0.03, 1.4, 'sine', 2680, 2420, 0.12);
+        if (!ctx || !this.sfxGain) return;
+        this.preloadDragonBacklash(ctx);
+        if (this.dragonBacklashBuffer) {
+            const src = ctx.createBufferSource();
+            src.buffer = this.dragonBacklashBuffer;
+            const gain = ctx.createGain();
+            gain.gain.value = 1.05;
+            src.connect(gain);
+            gain.connect(this.sfxGain);
+            src.start(ctx.currentTime);
+            return;
+        }
+        // Fallback if still decoding on very first trigger: play directly via HTMLAudioElement
+        const el = new Audio(DRAGON_BACKLASH_URL);
+        el.volume = Math.min(1, this.muted ? 0 : this.sfxVolume);
+        void el.play().catch(() => {});
     }
 
     // =========================================================================

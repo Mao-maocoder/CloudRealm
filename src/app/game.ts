@@ -15,6 +15,7 @@ import { CelestialOmen } from '../effects/celestial-omen';
 import { NascentBreakthrough } from '../effects/nascent-breakthrough';
 import { DivineSense } from '../effects/divine-sense';
 import { DragonSensePressureFX } from '../effects/dragon-sense-pressure';
+import { DragonGravityPressureFX } from '../effects/dragon-gravity-pressure';
 import { Atmosphere } from '../environment/atmosphere';
 import { formatShichen } from '../environment/day-night';
 import { FollowCamera } from '../player/camera';
@@ -89,8 +90,13 @@ export class Game {
     readonly nascentBreakthrough: NascentBreakthrough;
     readonly divineSense: DivineSense;
     readonly dragonSensePressure: DragonSensePressureFX;
+    readonly dragonGravityPressure: DragonGravityPressureFX;
     private dragonBacklashCooldownUntil = 0;
     private dragonPressureWarned = false;
+    private dragonSuppressionAge = -1;
+    private dragonSuppressionExecuted = false;
+    private readonly dragonSuppressionAnchor = new T.Vector3();
+    private dragonSuppressionHeading = 0;
     readonly meadow: Meadow;
     readonly wildlife: Wildlife;
     readonly vitals = new PlayerVitals();
@@ -270,6 +276,7 @@ export class Game {
     private async warmNascentShaders() {
         await this.warmSkillObjects([
             ...this.giantSword.nascentWarmObjects,
+            ...this.swordArray.nascentWarmObjects,
             ...this.voidFlight.warmObjects,
             ...this.fireball.warmObjects,
         ]);
@@ -287,6 +294,7 @@ export class Game {
             this.voidFlight.load(),
             this.celestialOmen.load(),
             this.giantSword.loadNascent(),
+            this.swordArray.loadNascent(),
         ]).then(() => this.warmNascentShaders()).catch(error => {
             console.warn('元婴期扩展资源加载失败', error);
             this.nascentAssetsPromise = undefined;
@@ -402,6 +410,11 @@ export class Game {
                 this.wildlife.rainContact(sword);
                 this.dragonBoss?.rainContact(sword);
             },
+            point => {
+                this.audio.playGiantSwordImpact();
+                this.wildlife.giantSwordBlast(point, true);
+                this.dragonBoss?.giantSwordBlast(point, true, giantSwordSplashRadius * 1.35);
+            },
         );
         this.player = new Player(
             this.input,
@@ -415,8 +428,25 @@ export class Game {
                 this.swordEffects.release(position, heading, target);
             },
             position => {
+                const isNascent = this.vitals.realmIndex >= 3;
                 this.audio.playSwordArrayStart();
-                this.swordArray.start(position);
+                let focusTargets: T.Vector3[] | undefined;
+                if (isNascent && this.divineSense.insightActive) {
+                    const maxRange = Math.max(85, this.vitals.stats.senseLockRange);
+                    focusTargets = this.wildlife.senseTargetsInCone(position, this.player.heading, maxRange, Math.PI / 4);
+                    // Also include Dragon Boss if alive and within the forward 45° cone
+                    const bossTarget = this.dragonBoss?.swordTarget(position, this.player.heading, maxRange, true);
+                    if (bossTarget) focusTargets.push(bossTarget.position.clone());
+                    if (!focusTargets.length && this.senseCombatTarget) {
+                        focusTargets = [this.senseCombatTarget.position.clone()];
+                    }
+                }
+                this.swordArray.start(
+                    position,
+                    isNascent,
+                    focusTargets,
+                    this.player.heading,
+                );
             },
             (position, heading) => {
                 this.audio.playMeleeSlash();
@@ -455,8 +485,8 @@ export class Game {
             (x, z) => this.player.floor(x, z),
             this.renderer.getPixelRatio(),
             {
-                onDamagePlayer: (rawDamage, attackLabel) => {
-                    const hit = this.vitals.receiveHit(rawDamage, attackLabel, this.time);
+                onDamagePlayer: (rawDamage, attackLabel, continuous) => {
+                    const hit = this.vitals.receiveHit(rawDamage, attackLabel, this.time, continuous ? 0.18 : 0.72);
                     if (hit && this.divineSense.astralActive) {
                         this.exitAstralProjection('本体遇袭 · 神识骤归！');
                     }
@@ -476,6 +506,34 @@ export class Game {
                     else if (kind === 'breath') this.audio.playDragonFireBreath();
                     else if (kind === 'wing') this.audio.playDragonWingFlap();
                 },
+                onLowRealmChallenge: () => {
+                    if (this.vitals.realmIndex >= 3) return false;
+                    if (this.dragonSuppressionAge < 0 && this.vitals.hp > 0) {
+                        if (this.divineSense.astralActive) this.exitAstralProjection();
+                        const px = this.player.position.x;
+                        const pz = this.player.position.z;
+                        const py = this.player.floor(px, pz);
+                        this.dragonSuppressionAnchor.set(px, py, pz);
+                        const bossPos = this.dragonBoss.group.position;
+                        this.dragonSuppressionHeading = Math.atan2(bossPos.x - px, -(bossPos.z - pz));
+                        this.dragonSuppressionAge = 0;
+                        this.dragonSuppressionExecuted = false;
+                        this.fireballPower = undefined;
+                        this.input.clear();
+                        this.swordArray.clear();
+                        this.dragonGravityPressure.trigger(this.dragonSuppressionAnchor, 3.2);
+                        this.dragonBoss.triggerRealmSuppression(this.dragonSuppressionAnchor);
+                        this.audio.playDragonSenseBacklash();
+                        this.audio.playDragonRoar();
+                        this.vitals.announce(
+                            `境界不足元婴 · 遭【${DragonBoss.REALM_LABEL}】古龙重力威压镇压，动弹不得！`,
+                            this.time,
+                            3.2,
+                        );
+                        this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+                    }
+                    return true;
+                },
             },
         );
         this.bossHealthBar = new BossHealthBar();
@@ -494,6 +552,7 @@ export class Game {
         this.nascentBreakthrough = new NascentBreakthrough(this.scene);
         this.divineSense = new DivineSense(this.scene);
         this.dragonSensePressure = new DragonSensePressureFX();
+        this.dragonGravityPressure = new DragonGravityPressureFX(this.scene);
         if (this.vitals.realmIndex >= 2) {
             void this.ensureNascentAssetsLoaded();
         }
@@ -749,6 +808,11 @@ export class Game {
 
     private async loadCharacter() {
         try {
+            // Load suppression animation clip in background without altering preload step count
+            void new GLTFLoader().loadAsync(new URL('../../resource/boss/Character_Pressure_Anim.glb', import.meta.url).href)
+                .then(gltf => this.player.avatar.installPressureClip(gltf))
+                .catch(error => console.warn('Dragon pressure animation load skipped', error));
+
             await Promise.all([
                 new GLTFLoader().loadAsync(new URL('../../resource/Character.glb', import.meta.url).href)
                     .then(gltf => this.player.avatar.install(gltf)),
@@ -929,6 +993,9 @@ export class Game {
         this.fireball.clear();
         this.giantSword.clear();
         this.divineSense.clear();
+        this.dragonGravityPressure.clear();
+        this.dragonSuppressionAge = -1;
+        this.dragonSuppressionExecuted = false;
         this.follow.reset();
         this.input.clear();
         this.wildlife.focus();
@@ -1004,7 +1071,8 @@ export class Game {
         this.time += dt;
         this.accumulator += dt;
         const inRitual = this.nascentBreakthrough.active;
-        const inAstral = this.divineSense.astralActive && !inRitual;
+        const inSuppressed = this.dragonSuppressionAge >= 0 && !inRitual;
+        const inAstral = this.divineSense.astralActive && !inRitual && !inSuppressed;
         if (inRitual) {
             this.accumulator = 0;
             this.nascentBreakthrough.update(dt, this.renderer.getPixelRatio());
@@ -1015,6 +1083,19 @@ export class Game {
                     this.player.heading,
                     this.nascentBreakthrough.avatarPose === 'burst' ? 'burst' : 'meditate',
                 );
+            }
+        } else if (inSuppressed) {
+            this.accumulator = 0;
+            this.dragonSuppressionAge += dt;
+            this.player.stepSuppressed(dt, this.dragonSuppressionAnchor, this.dragonSuppressionHeading);
+            if (!this.dragonSuppressionExecuted && this.dragonSuppressionAge >= 2.15) {
+                this.dragonSuppressionExecuted = true;
+                this.vitals.receiveHit(99999, '蚀渊古龙 · 龙威镇压 · 龙息瞬灭', this.time, 0);
+                this.audio.playPlayerHit();
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+            }
+            if (this.dragonSuppressionAge >= 3.2) {
+                this.dragonSuppressionAge = -1;
             }
         } else if (inAstral) {
             this.accumulator = 0;
@@ -1039,7 +1120,7 @@ export class Game {
         }
 
         const { avatar, heading } = this.player;
-        const canInteract = this.hud.started && !this.follow.free && !this.divineSense.astralActive && !this.worldMap.open && !this.nascentBreakthrough.active;
+        const canInteract = this.hud.started && !this.follow.free && !this.divineSense.astralActive && !this.worldMap.open && !this.nascentBreakthrough.active && !inSuppressed;
         this.touchControls.setVisible(canInteract || (this.hud.started && this.divineSense.astralActive && !this.worldMap.open));
         this.touchControls.syncState(this.player.flying, this.player.boosting, this.divineSense.insightActive, this.divineSense.astralActive);
 
@@ -1089,6 +1170,7 @@ export class Game {
             this.player.escapeLight,
             this.renderer.getPixelRatio(),
         );
+        this.dragonGravityPressure.update(dt);
         this.spellLights.beginFrame();
         this.swordEffects.collectLights(this.spellLights);
         this.voidFlight.collectLights(this.spellLights);
@@ -1096,6 +1178,7 @@ export class Game {
         this.giantSword.collectLights(this.spellLights);
         this.swordArray.collectLights(this.spellLights);
         this.nascentBreakthrough.collectLights(this.spellLights);
+        this.dragonGravityPressure.collectLights(this.spellLights);
         this.spellLights.setShadowEnabled(this.renderer.shadowMap.enabled);
         const dn = this.atmosphere.dayNight.state;
         this.spellLights.commit(dn.nightFactor, dn.duskFactor);
@@ -1472,6 +1555,7 @@ export class Game {
         this.nascentBreakthrough.dispose();
         this.divineSense.dispose();
         this.dragonSensePressure.dispose();
+        this.dragonGravityPressure.dispose();
         this.swordArray.dispose();
         this.fireball.dispose();
         this.giantSword.dispose();

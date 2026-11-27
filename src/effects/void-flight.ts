@@ -311,8 +311,8 @@ export class VoidFlightEffects {
 
                     vec3 col = mix(vec3(0.32, 0.84, 0.96), vec3(1.0, 0.88, 0.56), smoothstep(0.0, 0.6, halo));
                     col = mix(col, vec3(0.96, 0.99, 1.0), clamp(core * 0.85 + (rayMain + rayDiag) * 0.45, 0.0, 1.0));
-                    float alpha = (core * 0.62 + halo * 0.48 + (rayMain + rayDiag) * 0.45) * pulse * uAlpha;
-                    gl_FragColor = vec4(col * 0.92, clamp(alpha, 0.0, 0.65));
+                    float alpha = (core * 0.74 + halo * 0.58 + (rayMain + rayDiag) * 0.54) * pulse * uAlpha;
+                    gl_FragColor = vec4(col * 1.04, clamp(alpha, 0.0, 0.78));
                 }
             `,
         });
@@ -468,8 +468,8 @@ export class VoidFlightEffects {
                     float weightSum = max(0.001, coreSpear + cloudSkirt + goldThread * 0.65);
                     vec3 col = (cyanCol * coreSpear + mistCol * cloudSkirt + goldCol * goldThread * 0.75) / weightSum;
                     col = mix(col, vec3(0.92, 0.99, 1.0), coreSpear * (1.0 - along) * 0.32);
-                    float alpha = (coreSpear * 0.42 + cloudSkirt * 0.34 + goldThread * 0.36) * tailFade * uAlpha;
-                    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.44));
+                    float alpha = (coreSpear * 0.54 + cloudSkirt * 0.42 + goldThread * 0.46) * tailFade * uAlpha;
+                    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.58));
                 }
             `,
         });
@@ -537,7 +537,7 @@ export class VoidFlightEffects {
                     vec3 cyan = vec3(0.55, 0.94, 1.0);
                     vec3 col = mix(gold, cyan, step(0.65, vGold));
                     col = mix(col, vec3(0.98, 0.99, 0.96), clamp(core * 0.7, 0.0, 1.0));
-                    gl_FragColor = vec4(col * 0.95, clamp((core + crossStar) * vFade * uAlpha * 0.56, 0.0, 0.72));
+                    gl_FragColor = vec4(col * 1.05, clamp((core + crossStar) * vFade * uAlpha * 0.68, 0.0, 0.82));
                 }
             `,
         });
@@ -601,7 +601,7 @@ export class VoidFlightEffects {
                     vec3 goldShard = vec3(1.0, 0.86, 0.46);
                     vec3 baseCol = mix(cyanShard, goldShard, vWarm);
                     vec3 col = mix(baseCol, vec3(0.96, 0.99, 1.0), center * 0.55);
-                    gl_FragColor = vec4(col * 0.95, clamp(facet * vFade * uAlpha * 0.54, 0.0, 0.68));
+                    gl_FragColor = vec4(col * 1.05, clamp(facet * vFade * uAlpha * 0.66, 0.0, 0.80));
                 }
             `,
         });
@@ -710,8 +710,8 @@ export class VoidFlightEffects {
                         vec3 iceBlue = vec3(0.24, 0.78, 0.94);
                         vec3 goldRim = vec3(0.98, 0.86, 0.48);
                         vec3 col = mix(iceBlue * (0.62 + 0.48 * swirl.r), goldRim, clamp(rimSharp * 1.2, 0.0, 1.0));
-                        float alpha = (fresnel * 0.44 + rimSharp * 0.48 + swirl.r * 0.14 * (1.0 - ndotv * 0.5)) * uAlpha;
-                        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.52));
+                        float alpha = (fresnel * 0.54 + rimSharp * 0.58 + swirl.r * 0.18 * (1.0 - ndotv * 0.5)) * uAlpha;
+                        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.64));
                     }
                 `,
             });
@@ -770,8 +770,8 @@ export class VoidFlightEffects {
                             vec3 col = mix(vec3(0.20, 0.76, 0.94), vec3(0.86, 0.97, 1.0), clamp(silk * 0.45 + (1.0 - along) * 0.35, 0.0, 1.0));
                             float goldHit = smoothstep(0.72, 0.96, s2.b) * (1.0 - along * 0.4);
                             col = mix(col, vec3(0.98, 0.86, 0.48), goldHit * 0.50);
-                            float alpha = core * (0.28 + 0.46 * silk) * env * uAlpha;
-                            gl_FragColor = vec4(col * 0.92, clamp(alpha, 0.0, 0.46));
+                            float alpha = core * (0.36 + 0.54 * silk) * env * uAlpha;
+                            gl_FragColor = vec4(col * 1.04, clamp(alpha, 0.0, 0.58));
                         } else if (uMode < 1.5) {
                             // Mode 1: Ethereal Pale-Cyan Ink-Cloud Mist Veil (NormalBlending keeps color depth in daylight)
                             vec4 m1 = texture2D(uMistMap, vec2(vUv.x * 1.6, along * 1.8 - uTime * 2.6));
@@ -780,8 +780,8 @@ export class VoidFlightEffects {
                             float fresnel = pow(1.0 - ndotv, 1.45) * 0.75 + 0.18;
                             float env = smoothstep(0.0, 0.14, along) * pow(1.0 - along, 1.25);
                             vec3 col = mix(vec3(0.36, 0.78, 0.92), vec3(0.80, 0.94, 0.98), cloud * 0.55);
-                            float alpha = fresnel * cloud * env * 0.28 * uAlpha;
-                            gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.30));
+                            float alpha = fresnel * cloud * env * 0.36 * uAlpha;
+                            gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.38));
                         } else if (uMode < 2.5) {
                             // Mode 2: Delicate Champagne-Gold Silk Ribbon (鎏金仙绫)
                             float across = abs(vUv.x * 2.0 - 1.0);
@@ -790,8 +790,8 @@ export class VoidFlightEffects {
                             float bodySilk = exp(-across * across * 2.8) * (0.22 + 0.48 * f.r);
                             float env = smoothstep(0.0, 0.08, along) * pow(1.0 - along, 0.95);
                             vec3 col = mix(vec3(0.94, 0.74, 0.32), vec3(1.0, 0.93, 0.70), clamp(edgeGlow + f.r * 0.38, 0.0, 1.0));
-                            float alpha = (edgeGlow + bodySilk) * env * 0.46 * uAlpha;
-                            gl_FragColor = vec4(col * 0.94, clamp(alpha, 0.0, 0.50));
+                            float alpha = (edgeGlow + bodySilk) * env * 0.58 * uAlpha;
+                            gl_FragColor = vec4(col * 1.04, clamp(alpha, 0.0, 0.62));
                         } else {
                             // Mode 3: Translucent Glacial-Cyan Cloud Silk Ribbon (冰青流云缎带)
                             float across = abs(vUv.x * 2.0 - 1.0);
@@ -800,8 +800,8 @@ export class VoidFlightEffects {
                             float bodySilk = exp(-across * across * 2.2) * (0.20 + 0.52 * max(f.r, f.g * 0.85));
                             float env = smoothstep(0.0, 0.08, along) * pow(1.0 - along, 0.98);
                             vec3 col = mix(vec3(0.24, 0.76, 0.94), vec3(0.80, 0.95, 1.0), clamp(edgeGlow * 0.6 + f.r * 0.4, 0.0, 1.0));
-                            float alpha = (edgeGlow + bodySilk) * env * 0.42 * uAlpha;
-                            gl_FragColor = vec4(col * 0.92, clamp(alpha, 0.0, 0.46));
+                            float alpha = (edgeGlow + bodySilk) * env * 0.54 * uAlpha;
+                            gl_FragColor = vec4(col * 1.04, clamp(alpha, 0.0, 0.58));
                         }
                     }
                 `,
@@ -982,7 +982,7 @@ export class VoidFlightEffects {
 
             // Golden halo ring billboard at front (gentle translucency, no daytime blowout)
             this.haloSprite.visible = true;
-            this.haloMat.opacity = this.lightBlend * 0.42;
+            this.haloMat.opacity = this.lightBlend * 0.54;
             this.haloMat.rotation = this.time * 0.35;
             const haloS = (1.95 + 0.10 * Math.sin(this.time * 5.0)) * (0.78 + 0.22 * this.lightBlend);
             this.haloSprite.scale.setScalar(haloS);
@@ -1013,7 +1013,7 @@ export class VoidFlightEffects {
                 c.sprite.visible = true;
                 c.sprite.position.set(Math.cos(a) * rad, Math.sin(a) * rad, z);
                 const env = Math.sin(Math.min(1, t * 4.5) * Math.PI * 0.5) * (1 - Math.pow(t, 1.4));
-                c.sprite.material.opacity = env * 0.28 * this.lightBlend;
+                c.sprite.material.opacity = env * 0.36 * this.lightBlend;
                 c.sprite.material.rotation = Math.sin(this.time * 1.5 + c.angle) * 0.18;
                 const sc = c.baseScale * (0.68 + 0.25 * (1 - t));
                 c.sprite.scale.set(sc * 1.55, sc * 0.76, 1);
@@ -1108,7 +1108,7 @@ export class VoidFlightEffects {
                 y: this.lightPos.y,
                 z: this.lightPos.z,
                 color: 0x72dcf2,
-                intensity: 9.5 * this.lightBlend,
+                intensity: 11.5 * this.lightBlend,
                 distance: 24,
                 priority: 3,
                 // The fast-moving trail only needs fill light. Avoid six shadow passes per frame.

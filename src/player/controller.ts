@@ -158,6 +158,27 @@ export class Player {
         this.updateShadow();
     }
 
+    /** Pins the cultivator to the ground in a hunched, immobilized bracing pose under Dragon Boss gravity pressure. */
+    stepSuppressed(dt: number, anchorPos: T.Vector3, heading: number) {
+        this.velocity.set(0, 0, 0);
+        this.flying = false;
+        this.grounded = true;
+        this.boosting = false;
+        this.skyWalking = false;
+        this.escapeLight = false;
+        this.swimming = false;
+        const alpha = 1 - Math.exp(-14 * dt);
+        this.position.lerp(anchorPos, alpha);
+        this.previousPosition.copy(this.position);
+        this.heading = this.previousHeading = heading;
+        this.bank = this.previousBank = 0;
+        this.lean = this.previousLean = 0;
+        this.avatar.position.copy(this.position);
+        this.avatar.rotation.set(0, Math.PI - heading, 0, 'YXZ');
+        this.avatar.update(dt, false, true, false, 0, false, false, false, false, false, false, 'pressure');
+        this.updateShadow();
+    }
+
     /** Hands back control after the ceremony in graceful Nascent Soul midair hover. */
     finishBreakthroughHover(worldPos: T.Vector3, heading: number) {
         this.position.copy(worldPos);

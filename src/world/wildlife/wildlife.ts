@@ -473,6 +473,37 @@ export class Wildlife {
         return best;
     }
 
+    /**
+     * Collects all live wild monsters revealed by Divine Sense within a forward cone
+     * (default ±45° ahead of `heading`) up to `maxRange` meters away.
+     */
+    senseTargetsInCone(
+        origin: T.Vector3,
+        heading: number,
+        maxRange: number,
+        halfAngleRad = Math.PI / 4,
+    ): T.Vector3[] {
+        const fwdX = Math.sin(heading);
+        const fwdZ = -Math.cos(heading);
+        const minCos = Math.cos(halfAngleRad);
+        const rSq = maxRange * maxRange;
+        const now = this.simulation.time;
+        const results: T.Vector3[] = [];
+        for (const a of this.simulation.agents) {
+            if (a.health <= 0 || a.state === 'Defeat') continue;
+            if (a.senseMarkedUntil <= now && !a.ready) continue;
+            const dx = a.position.x - origin.x;
+            const dz = a.position.z - origin.z;
+            const dSq = dx * dx + dz * dz;
+            if (dSq < 4 || dSq > rSq) continue;
+            const dist = Math.sqrt(dSq);
+            const dot = (dx * fwdX + dz * fwdZ) / dist;
+            if (dot < minCos) continue;
+            results.push(new T.Vector3(a.position.x, a.position.y, a.position.z));
+        }
+        return results;
+    }
+
     applyDivineSensePulse(
         origin: T.Vector3,
         radius: number,

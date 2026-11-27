@@ -24,11 +24,13 @@ export type DragonBossState =
     | 'DEFEATED';
 
 export interface DragonBossCallbacks {
-    onDamagePlayer?: (rawDamage: number, attackLabel: string) => void;
+    onDamagePlayer?: (rawDamage: number, attackLabel: string, continuous?: boolean) => void;
     damageMultiplier?: () => { scale: number; crit: boolean };
     onDefeat?: (bossName: string) => void;
     onHitFeedback?: (damage: number, crit: boolean) => void;
     onSfx?: (kind: 'roar' | 'impact' | 'breath' | 'wing') => void;
+    /** Called before applying damage; return true to block the hit and trigger realm-suppression execution. */
+    onLowRealmChallenge?: () => boolean;
 }
 
 const DRAGON_SCALE = 11.5;
@@ -98,6 +100,7 @@ export class DragonBoss {
     private strikeDamageFired = false;
     private breathTickAccum = 0;
     private strafeGapClose = false;
+    private suppressionTarget?: T.Vector3;
 
     // Spatial kinematics
     readonly position = new T.Vector3();
@@ -230,6 +233,7 @@ export class DragonBoss {
     // =========================================================================
     applyDamage(baseDamage: number): boolean {
         if (!this.isAlive || baseDamage <= 0) return false;
+        if (this.callbacks.onLowRealmChallenge?.()) return false;
         const roll = this.callbacks.damageMultiplier?.() ?? { scale: 1, crit: false };
         const dmg = Math.max(1, Math.round(baseDamage * roll.scale));
         this.hp = Math.max(0, this.hp - dmg);
@@ -551,14 +555,38 @@ export class DragonBoss {
         }
     }
 
-    private tryHitPlayerCone(playerPos: T.Vector3, maxRange: number, maxHalfAngleRad: number, rawDamage: number, label: string, maxHeightDiff = 10) {
+    /** Immediately locks onto a suppressed sub-Nascent challenger and unleashes an execution Dragon Breath. */
+    triggerRealmSuppression(playerPos: T.Vector3) {
+        if (!this.isAlive) return;
+        this.aggroActive = true;
+        this.suppressionTarget = playerPos.clone();
+        this.suppressionTarget.y += 0.9;
+        this.yaw = Math.atan2(playerPos.x - this.position.x, playerPos.z - this.position.z);
+        const groundY = this.sampleFloorY(this.position.x, this.position.z);
+        const airborne = this.position.y - groundY > 5.0;
+        if (airborne) {
+            this.enterState('BREATH_STRAFE', playerPos);
+        } else {
+            this.enterState('ATTACK_GROUND_BREATH', playerPos);
+        }
+    }
+
+    private tryHitPlayerCone(
+        playerPos: T.Vector3,
+        maxRange: number,
+        maxHalfAngleRad: number,
+        rawDamage: number,
+        label: string,
+        maxHeightDiff = 10,
+        continuous = false,
+    ) {
         const dx = playerPos.x - this.position.x;
         const dz = playerPos.z - this.position.z;
         const dist = Math.hypot(dx, dz);
         if (dist > maxRange || Math.abs(playerPos.y - this.position.y) > maxHeightDiff) return;
         const toPlayerYaw = Math.atan2(dx, dz);
         if (angleDiffAbs(toPlayerYaw, this.yaw) <= maxHalfAngleRad) {
-            this.callbacks.onDamagePlayer?.(rawDamage, label);
+            this.callbacks.onDamagePlayer?.(rawDamage, label, continuous);
         }
     }
 
@@ -856,13 +884,13 @@ export class DragonBoss {
                 const clipTime = this.activeAction?.time ?? this.stateTime;
                 this.breathFx.syncWithAnimationTime(clipTime);
 
-                // Periodic flame stream damage tick while breathing (1.08s..2.83s)
+                // Continuous rapid flame stream DoT while breathing (1.05s..2.85s, ticking every 0.22s!)
                 if (clipTime >= 1.05 && clipTime <= 2.85) {
                     if (distPlayerToDragon < 140) this.callbacks.onSfx?.('breath');
                     this.breathTickAccum += clampedDt;
-                    if (this.breathTickAccum >= 0.42) {
-                        this.breathTickAccum = 0;
-                        this.tryHitPlayerCone(playerPos, 48, Math.PI * 0.28, 56, '蚀渊古龙 · 贴地焚焰', 22);
+                    if (this.breathTickAccum >= 0.22) {
+                        this.breathTickAccum -= 0.22;
+                        this.tryHitPlayerCone(playerPos, 50, Math.PI * 0.28, 28, '蚀渊古龙 · 贴地焚焰灼烧', 22, true);
                     }
                 }
 
@@ -937,22 +965,26 @@ export class DragonBoss {
             case 'ATTACK_GROUND_BREATH': {
                 const floorY = this.sampleFloorY(this.position.x, this.position.z);
                 this.position.y = T.MathUtils.lerp(this.position.y, floorY, 1 - Math.exp(-8 * clampedDt));
-                if (this.stateTime < 0.9) {
-                    const desiredYaw = Math.atan2(playerPos.x - this.position.x, playerPos.z - this.position.z);
-                    this.yaw = dampAngle(this.yaw, desiredYaw, 3.2, clampedDt);
+                if (this.stateTime < 0.9 || this.suppressionTarget) {
+                    const aimPos = this.suppressionTarget ?? playerPos;
+                    const desiredYaw = Math.atan2(aimPos.x - this.position.x, aimPos.z - this.position.z);
+                    this.yaw = dampAngle(this.yaw, desiredYaw, this.suppressionTarget ? 6.5 : 3.2, clampedDt);
                 }
-                const firing = this.stateTime >= 1.08 && this.stateTime <= 2.67;
+                const firing = this.suppressionTarget
+                    ? (this.stateTime >= 0.85 && this.stateTime <= 3.05)
+                    : (this.stateTime >= 1.08 && this.stateTime <= 2.67);
                 this.breathFx.setEmitting(firing);
                 if (firing) {
                     if (distPlayerToDragon < 140) this.callbacks.onSfx?.('breath');
                     this.breathTickAccum += clampedDt;
-                    if (this.breathTickAccum >= 0.44) {
-                        this.breathTickAccum = 0;
-                        this.tryHitPlayerCone(playerPos, 54, Math.PI * 0.34, 46, '蚀渊古龙 · 炽炎龙息', 14);
+                    if (this.breathTickAccum >= 0.22) {
+                        this.breathTickAccum -= 0.22;
+                        this.tryHitPlayerCone(playerPos, 54, Math.PI * 0.34, 24, '蚀渊古龙 · 炽炎龙息灼烧', 14, true);
                     }
                 }
                 if (this.stateTime >= this.stateDuration) {
                     this.breathFx.setEmitting(false);
+                    this.suppressionTarget = undefined;
                     this.enterState('PATROL_WALK', playerPos);
                 }
                 break;
@@ -968,7 +1000,9 @@ export class DragonBoss {
         if (this.headBone) {
             this.tmpHeadPos.set(0, 0.115, -0.042);
             this.headBone.localToWorld(this.tmpHeadPos);
-            if (this.state === 'BREATH_STRAFE' && playerAirborne && this.aggroActive) {
+            if (this.suppressionTarget && (this.state === 'ATTACK_GROUND_BREATH' || this.state === 'BREATH_STRAFE')) {
+                this.tmpHeadDir.subVectors(this.suppressionTarget, this.tmpHeadPos).normalize();
+            } else if (this.state === 'BREATH_STRAFE' && playerAirborne && this.aggroActive) {
                 this.tmpHeadDir.subVectors(playerPos, this.tmpHeadPos).normalize();
             } else {
                 this.headBone.getWorldQuaternion(this.tmpQuat);
@@ -976,7 +1010,11 @@ export class DragonBoss {
             }
         } else {
             this.tmpHeadPos.copy(this.position).add(new T.Vector3(Math.sin(this.yaw) * 6, 3, Math.cos(this.yaw) * 6));
-            this.tmpHeadDir.set(Math.sin(this.yaw), -0.35, Math.cos(this.yaw)).normalize();
+            if (this.suppressionTarget) {
+                this.tmpHeadDir.subVectors(this.suppressionTarget, this.tmpHeadPos).normalize();
+            } else {
+                this.tmpHeadDir.set(Math.sin(this.yaw), -0.35, Math.cos(this.yaw)).normalize();
+            }
         }
         this.breathFx.update(clampedDt, this.tmpHeadPos, this.tmpHeadDir, groundAtDragon, DRAGON_SCALE);
     }

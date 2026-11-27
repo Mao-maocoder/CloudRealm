@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { detectDevice } from '../config/device';
 import { SwordRainFX } from './sword-rain-fx';
+import { NascentSwordArray } from './nascent-sword-array';
 import type { SpellLightPool } from './spell-lights';
 
 const loopDuration = 12;
@@ -392,6 +393,7 @@ export class SwordArray {
     private proceduralTime = 0;
     private readonly rain: FallingSword[] = [];
     private readonly rainFx = new SwordRainFX(this.group, maxSwords);
+    private readonly nascent: NascentSwordArray;
     private readonly lightGeometry = new T.CylinderGeometry(.75, 1, 1, 10, 1, true);
     private readonly beam = new T.Mesh(this.lightGeometry, lightMaterial(false));
     private readonly beamCore = new T.Mesh(this.lightGeometry, lightMaterial(true));
@@ -423,7 +425,9 @@ export class SwordArray {
         private surfaceAt: (x: number, z: number, fromY: number) => { height: number; water: boolean },
         private onError: (error: unknown) => void,
         private onContact?: (sword: SwordRainContact) => void,
+        onFinisherImpact?: (point: T.Vector3) => void,
     ) {
+        this.nascent = new NascentSwordArray(scene, surfaceAt, onContact, onFinisherImpact);
         this.group.name = '万剑归宗';
         this.group.visible = false;
         this.mesh.name = 'Sword Array';
@@ -446,6 +450,10 @@ export class SwordArray {
 
     load() {
         return this.rainFx.load();
+    }
+
+    loadNascent() {
+        return this.nascent.load().catch(err => console.warn('元婴万剑归宗素材加载降级', err));
     }
 
     attachSword(sword: T.Object3D, tip: T.Object3D) {
@@ -476,13 +484,19 @@ export class SwordArray {
         this.blades.push({ instances, local: new T.Matrix4(), ownsGeometry: true, ownsMaterial: true });
         this.group.add(instances);
         this.bladeLength = merged.boundingBox.max.z - merged.boundingBox.min.z;
+        this.nascent.attachSharedBlade(merged, tip, this.bladeDown, this.tipOffset, this.bladeLength);
     }
 
     get warmObjects(): T.Object3D[] {
         return [this.group, this.chargeGroup];
     }
 
+    get nascentWarmObjects(): T.Object3D[] {
+        return this.nascent.warmObjects;
+    }
+
     get framing() {
+        if (this.nascent.isActive) return this.nascent.framing;
         if (!this.group.visible) return;
         if (this.proceduralMode) {
             if (this.proceduralTime > 5.8) return;
@@ -496,8 +510,13 @@ export class SwordArray {
         if (weight > 0) return { center: this.group.position, weight, radius: formationWidth * .44 };
     }
 
-    start(position: T.Vector3) {
+    start(position: T.Vector3, isNascent = false, focusTargets?: T.Vector3[], heading = 0) {
         this.clear();
+        if (isNascent) {
+            this.burstAge = 0;
+            this.nascent.start(position, focusTargets, heading);
+            return;
+        }
         this.groundY = position.y;
         this.group.position.copy(position);
         this.group.position.y += formationHeight;
@@ -604,6 +623,9 @@ export class SwordArray {
     }
 
     update(dt: number) {
+        if (this.nascent.isActive) {
+            if (!this.paused) this.nascent.update(dt);
+        }
         if (this.sampleBeamOrigin) {
             this.sampleBeamOrigin = false;
             this.beamOrigin.set(0, 2.2 - formationHeight, 0);
@@ -757,6 +779,7 @@ export class SwordArray {
     }
 
     collectLights(pool: SpellLightPool) {
+        this.nascent.collectLights(pool);
         // 1) Spirit flare on raised sword tip during opening charge.
         if (this.chargeGroup.visible && this.currentOrbAlpha > 0.02) {
             const p = this.tipOrb.position;
@@ -816,10 +839,12 @@ export class SwordArray {
         this.chargeGroup.visible = false;
         for (const {instances} of this.blades) instances.count = 0;
         this.rainFx.clear();
+        this.nascent.clear();
     }
 
     dispose() {
         this.clear();
+        this.nascent.dispose();
         this.opening.video.removeEventListener('ended', this.opened);
         for (const {video, texture} of [this.opening, this.loop]) {
             video.removeEventListener('error', this.mediaError);
