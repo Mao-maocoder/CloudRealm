@@ -248,22 +248,54 @@ export class MapExpansion {
         }
     }
 
-    update(time: number, position: T.Vector3, camera?: T.PerspectiveCamera, velocity = new T.Vector3(), viewHeight = 720, pixelBudget = 1) {
+    /**
+     * Low-priority idle warmup for remaining scenic regions on desktop after entering the valley
+     * so high-speed 95 m/s Nascent Escape Light flights across the 6km map never trigger mid-flight pop-build hitches.
+     */
+    async preloadRemainingRegionsIdle(isDisposed: () => boolean) {
+        if (detectDevice().isMobile) return;
+        const rest = regions.map(r => r.id).filter(id => !this.active.has(id));
+        const yieldIdle = () => new Promise<void>(resolve => {
+            const ric = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback;
+            if (ric) ric(() => resolve(), { timeout: 1200 });
+            else window.setTimeout(resolve, 450);
+        });
+        for (const id of rest) {
+            await yieldIdle();
+            if (isDisposed()) return;
+            this.ensureRegion(id);
+        }
+    }
+
+    update(time: number, position: T.Vector3, camera?: T.PerspectiveCamera, velocity = new T.Vector3(), viewHeight = 720, pixelBudget = 1, highSpeed = false) {
         this.time.value = time;
+        const evictRadius = detectDevice().isMobile ? 2200 : 4200;
         for (const [id, group] of this.active) {
             const region = regions.find(r => r.id === id)!;
             if (id === peakland.id || id === 'sky') continue;
-            if (Math.hypot(position.x - region.x, position.z - region.z) > 2200) {
+            if (Math.hypot(position.x - region.x, position.z - region.z) > evictRadius) {
                 this.scene.remove(group);
                 this.release(group);
                 this.active.delete(id);
             }
         }
-        const candidate = regions.filter(r => !this.active.has(r.id) && Math.hypot(position.x - r.x, position.z - r.z) < (r.id === 'lake' ? 1580 : r.id === peakland.id ? 1750 : 1350)).sort((a, b) => Math.hypot(position.x - a.x, position.z - a.z) - Math.hypot(position.x - b.x, position.z - b.z))[0];
-        if (candidate) {
-            const group = this.create(candidate);
-            this.scene.add(group);
-            this.active.set(candidate.id, group);
+        if (!highSpeed) {
+            let best: Region | undefined;
+            let bestDist = Infinity;
+            for (const r of regions) {
+                if (this.active.has(r.id)) continue;
+                const d = Math.hypot(position.x - r.x, position.z - r.z);
+                const limit = r.id === 'lake' ? 1580 : r.id === peakland.id ? 1750 : 1350;
+                if (d < limit && d < bestDist) {
+                    best = r;
+                    bestDist = d;
+                }
+            }
+            if (best) {
+                const group = this.create(best);
+                this.scene.add(group);
+                this.active.set(best.id, group);
+            }
         }
         const region = this.active.get(peakland.id);
         const rocks = region?.children.find(o => o instanceof PeakRockField);

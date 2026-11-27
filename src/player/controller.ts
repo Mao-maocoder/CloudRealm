@@ -345,7 +345,7 @@ export class Player {
                 }
             } else if (attack) {
                 if (attack === 'heavy') {
-                    if (this.gates?.onConsumeSkill ? this.gates.onConsumeSkill('swordWave') : true) {
+                    if (!this.avatar.heavyQueued && (this.gates?.onConsumeSkill ? this.gates.onConsumeSkill('swordWave') : true)) {
                         this.avatar.requestAttack(attack);
                     }
                 } else {
@@ -362,7 +362,11 @@ export class Player {
         else if (movingInput) facing = input.yaw + Math.atan2(axisX, axisZ);
         else if (attack === 'light' || this.avatar.lightAttacking) facing = input.yaw;
         const delta = Math.atan2(Math.sin(facing - this.heading), Math.cos(facing - this.heading));
-        const turnRate = (this.flying && !skywalkCombat) ? (voidMode ? 4.2 : 1.6) : this.swimming ? 7.5 : 16;
+        const turnRate = (this.flying && !skywalkCombat)
+            ? (voidMode ? 4.2 : 1.6)
+            : this.swimming
+                ? 7.5
+                : (attack === 'heavy' || this.avatar.heavyAttacking) ? 22 : 16;
         const turn = active ? T.MathUtils.clamp(delta, -turnRate * dt, turnRate * dt) : 0;
         this.heading += turn;
         this.bank = T.MathUtils.damp(this.bank, (this.flying && !skywalkCombat) ? -turn / dt * (voidMode ? .12 : .2) : 0, 6, dt);
@@ -441,7 +445,7 @@ export class Player {
                 : this.scratchMove.copy(forward).multiplyScalar(axisZ).addScaledVector(right, axisX);
             const mag = Math.min(1, move.length());
             if (mag > 0.001) {
-                const pace = (boost ? config.runSpeed : config.walkSpeed) * (this.avatar.heavyAttacking ? .72 : 1) * mag;
+                const pace = (boost ? config.runSpeed : config.walkSpeed) * mag;
                 move.normalize().multiplyScalar(pace);
             }
             this.velocity.x = T.MathUtils.damp(this.velocity.x, move.x, 10, dt);

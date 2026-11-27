@@ -8,7 +8,7 @@ uniform vec3 uAmbGround;
 vec3 skyBase(vec3 d){return mix(vec3(.60,.80,.82),vec3(.16,.43,.71),smoothstep(0.,.4,d.y));}
 `;
 export class CloudBake {
- readonly target=new T.WebGLRenderTarget(1024,256,{type:T.HalfFloatType,depthBuffer:false});
+ readonly target=new T.WebGLRenderTarget(512,128,{type:T.HalfFloatType,depthBuffer:false});
  private scene=new T.Scene();
  private camera=new T.OrthographicCamera(-1,1,1,-1,0,1);
  private material:T.ShaderMaterial;
@@ -20,12 +20,13 @@ export class CloudBake {
  const mesh=new T.Mesh(this.geometry,this.material);mesh.frustumCulled=false;this.scene.add(mesh);
  this.target.texture.wrapS=T.RepeatWrapping;
  }
+ get done(){ return this.cursor>=16; }
  step(renderer:T.WebGLRenderer){
- if(this.cursor>=32)return true;
+ if(this.cursor>=16)return true;
  const previous=renderer.getRenderTarget(),auto=renderer.autoClear;
- renderer.autoClear=false;this.target.scissorTest=true;this.target.scissor.set(0,this.cursor*8,1024,8);
+ renderer.autoClear=false;this.target.scissorTest=true;this.target.scissor.set(0,this.cursor*8,512,8);
  renderer.setRenderTarget(this.target);renderer.render(this.scene,this.camera);renderer.setRenderTarget(previous);renderer.autoClear=auto;
- this.cursor++;return this.cursor>=32;
+ this.cursor++;return this.cursor>=16;
  }
  dispose(){this.target.dispose();this.material.dispose();this.geometry.dispose();}
 }
@@ -131,7 +132,7 @@ void main(){
   float t1 = shell(ro - C, rd, RP + H1).y;
   if (t0 > 0.0 && t1 > t0){
     t1 = min(t1, t0 + 46000.0);
-    const int STEPS = 48;
+    const int STEPS = 32;
     float dt = (t1 - t0) / float(STEPS);
     float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uJitter);
     float t = t0 + dt * n;

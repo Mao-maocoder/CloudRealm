@@ -1,5 +1,6 @@
 import {lakeShoreDistance,lakes,riverSamplesAt,smooth,waterSurfaceAt} from './geo-core';
 import {valueNoise} from './height';
+import {bossTerritoryGrassMask} from './boss-territories';
 
 export function shoreDistanceAt(x:number,z:number) {
  let shoreDistance=Infinity;
@@ -17,6 +18,6 @@ export function meadowHabitatAt(x:number,z:number,height:number,slope:number){
  let moisture=Math.exp(-Math.max(0,shoreDistance)/55);
  const bambooWetland=1-smooth(.55,1.25,Math.hypot((x+640)/260,(z-620)/300));moisture=Math.max(moisture,bambooWetland*.65);
  const water=waterSurfaceAt(x,z,7),patches=.76+.24*valueNoise(x*.026,z*.026,53),alpine=1-smooth(200,420,height);
- const cover=(1-smooth(.55,1.1,slope))*(1-smooth(300,420,height))*(Number.isFinite(water)?smooth(.31,1.8,height-water):1)*patches*(.88+.12*moisture)*(.9+.1*alpine);
+ const cover=(1-smooth(.55,1.1,slope))*(1-smooth(300,420,height))*(Number.isFinite(water)?smooth(.31,1.8,height-water):1)*patches*(.88+.12*moisture)*(.9+.1*alpine)*bossTerritoryGrassMask(x,z);
  return{cover,moisture,shoreDistance};
 }

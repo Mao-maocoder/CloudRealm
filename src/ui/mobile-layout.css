@@ -1,0 +1,411 @@
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+.mobile-layout,
+.portrait-view {
+  --mobile-left: max(12px, env(safe-area-inset-left));
+  --mobile-right: max(12px, env(safe-area-inset-right));
+  --mobile-top: max(10px, env(safe-area-inset-top));
+  --mobile-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.mobile-layout #app,
+.mobile-layout .welcome,
+.mobile-layout .touch-controls,
+.mobile-layout .overlay,
+.mobile-layout .world-map {
+  height: 100dvh;
+}
+
+.mobile-rotate[hidden] { display: none !important; }
+
+/* Non-blocking floating Guofeng landscape recommendation pill (dismissible so portrait play works!) */
+.mobile-rotate {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: max(10px, env(safe-area-inset-top));
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+.mobile-landscape-bar {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(94vw, 420px);
+  padding: 7px 10px 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 214, 151, .68);
+  background: rgba(11, 38, 46, .92);
+  box-shadow: 0 8px 24px rgba(4, 16, 22, .62);
+  color: #fff3d6;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.mobile-rotate-device {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 20px;
+  height: 13px;
+  border: 1.6px solid #efd697;
+  border-radius: 3px;
+  box-shadow: inset 3px 0 #efd697;
+  transform: rotate(-12deg);
+}
+
+.mobile-rotate-copy {
+  color: #e6f2ec;
+  font-size: 11px;
+}
+
+.mobile-rotate-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 228, 166, .82);
+  background: linear-gradient(180deg, rgba(44, 118, 114, .95), rgba(20, 74, 78, .95));
+  color: #fff8e2;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mobile-rotate-dismiss {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255, 255, 255, .1);
+  color: #e9dfca;
+  font-size: 16px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+/* Mobile fullscreen/landscape utility button (hidden on desktop) */
+.util-btn.mobile-only-btn { display: none; }
+.mobile-layout .util-btn.mobile-only-btn,
+html.touch-mode .util-btn.mobile-only-btn { display: grid; }
+
+/* Welcome screen framing on mobile */
+.mobile-layout .welcome-entry { bottom: max(5%, calc(var(--mobile-bottom) + 10px)); }
+.mobile-layout .welcome-loading { max-width: calc(100% - var(--mobile-left) - var(--mobile-right)); }
+
+/* ── Portrait Mobile & Narrow Screens (竖屏完整适配) ──────────────────────── */
+@media (orientation: portrait) {
+  .mobile-layout .welcome-art,
+  .portrait-view .welcome-art { object-position: 74% 50%; }
+
+  .mobile-layout #welcome-title,
+  .portrait-view #welcome-title {
+    left: 50%;
+    top: calc(var(--mobile-top, 10px) + 52px);
+    transform: translateX(-50%);
+  }
+
+  .mobile-layout #welcome-title img,
+  .portrait-view #welcome-title img {
+    width: min(78vw, 380px);
+  }
+
+  .mobile-layout .welcome-start,
+  .portrait-view .welcome-start {
+    width: min(68vw, 270px);
+  }
+
+  /* Compact non-overlapping Portrait HUD */
+  .mobile-layout .top-bar,
+  .portrait-view .top-bar {
+    top: var(--mobile-top, 10px);
+    left: var(--mobile-left, 12px);
+    right: var(--mobile-right, 12px);
+    gap: 8px;
+  }
+
+  .mobile-layout .compass-bar,
+  .mobile-layout .brand-block,
+  .mobile-layout .controls-wrap,
+  .portrait-view .compass-bar,
+  .portrait-view .brand-block,
+  .portrait-view .controls-wrap {
+    display: none;
+  }
+
+  .mobile-layout .char-card,
+  .portrait-view .char-card {
+    width: min(56vw, 212px);
+  }
+
+  .mobile-layout .char-panel-stage,
+  .portrait-view .char-panel-stage {
+    width: 100%;
+  }
+
+  .mobile-layout .char-card.compact .char-panel-stage,
+  .portrait-view .char-card.compact .char-panel-stage {
+    height: 62px;
+  }
+
+  .mobile-layout .char-card.compact .char-portrait-clip,
+  .portrait-view .char-card.compact .char-portrait-clip {
+    left: 7px;
+    top: 7px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .mobile-layout .char-card.compact .char-avatar-ring-svg,
+  .portrait-view .char-card.compact .char-avatar-ring-svg {
+    left: 1px;
+    top: 1px;
+    width: 56px;
+    height: 56px;
+  }
+
+  .mobile-layout .char-card.compact .char-head-overlay,
+  .portrait-view .char-card.compact .char-head-overlay {
+    left: 60px;
+    top: 6px;
+    right: 4px;
+    padding: 4px 10px;
+  }
+
+  .mobile-layout .char-card.compact .char-name,
+  .portrait-view .char-card.compact .char-name {
+    font-size: 12.5px;
+  }
+
+  .mobile-layout .telemetry-mini,
+  .portrait-view .telemetry-mini {
+    font-size: 9.5px;
+    padding: 3px 8px;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .mobile-layout .minimap-shell,
+  .portrait-view .minimap-shell {
+    width: 82px;
+    height: 85px;
+  }
+
+  .mobile-layout .utility-btns,
+  .portrait-view .utility-btns {
+    gap: 5px;
+  }
+
+  .mobile-layout .util-btn,
+  .portrait-view .util-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .mobile-layout .astral-banner,
+  .portrait-view .astral-banner {
+    top: calc(var(--mobile-top, 10px) + 92px);
+    max-width: 92vw;
+    padding: 6px 12px;
+  }
+
+  .mobile-layout .astral-banner-text strong,
+  .portrait-view .astral-banner-text strong {
+    font-size: 14px;
+  }
+
+  .mobile-layout .astral-banner-text small,
+  .portrait-view .astral-banner-text small {
+    font-size: 9.5px;
+  }
+
+  /* Portrait bottom 2-tier layout: Skill Dock sits cleanly above Joystick + Action Pad */
+  .mobile-layout .touch-controls,
+  .portrait-view .touch-controls {
+    --touch-small: 44px;
+    --touch-primary: 64px;
+    --touch-gap: 6px;
+  }
+
+  .mobile-layout .touch-stick-zone,
+  .portrait-view .touch-stick-zone {
+    left: var(--mobile-left, 12px);
+    bottom: var(--mobile-bottom, 12px);
+    width: 124px;
+    height: 124px;
+  }
+
+  .mobile-layout .touch-stick-base,
+  .portrait-view .touch-stick-base {
+    width: 98px;
+    height: 98px;
+  }
+
+  .mobile-layout .touch-stick-knob,
+  .portrait-view .touch-stick-knob {
+    width: 38px;
+    height: 38px;
+  }
+
+  .mobile-layout .touch-action-pad,
+  .portrait-view .touch-action-pad {
+    right: var(--mobile-right, 12px);
+    bottom: var(--mobile-bottom, 12px);
+    width: 174px;
+    height: 162px;
+    transform: none;
+  }
+
+  .mobile-layout .sub-btn,
+  .portrait-view .sub-btn {
+    width: var(--touch-small);
+    height: var(--touch-small);
+  }
+
+  .mobile-layout .primary-attack-btn,
+  .portrait-view .primary-attack-btn {
+    right: 0;
+    bottom: 0;
+    width: var(--touch-primary);
+    height: var(--touch-primary);
+  }
+
+  .mobile-layout .wave-btn,
+  .portrait-view .wave-btn { right: 72px; bottom: 0; }
+  .mobile-layout .sense-btn,
+  .portrait-view .sense-btn { right: 122px; bottom: 0; }
+  .mobile-layout .dash-btn,
+  .portrait-view .dash-btn { right: 102px; bottom: 52px; }
+  .mobile-layout .jump-btn,
+  .portrait-view .jump-btn { right: 52px; bottom: 72px; }
+  .mobile-layout .flight-btn,
+  .portrait-view .flight-btn { right: 0; bottom: 72px; }
+  .mobile-layout .descend-btn,
+  .portrait-view .descend-btn { right: 102px; bottom: 104px; width: 42px; height: 42px; }
+
+  .mobile-layout .skill-dock,
+  .portrait-view .skill-dock {
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--mobile-bottom, 12px) + 170px);
+    max-width: calc(100vw - 20px);
+  }
+
+  .mobile-layout .skill-bar-dynamic,
+  .portrait-view .skill-bar-dynamic {
+    padding: 6px 10px;
+  }
+
+  .mobile-layout .skill-ornament,
+  .mobile-layout .skill-orb kbd,
+  .portrait-view .skill-ornament,
+  .portrait-view .skill-orb kbd {
+    display: none;
+  }
+
+  .mobile-layout .skill-slots-row,
+  .portrait-view .skill-slots-row { gap: 4px; }
+  .mobile-layout .skill-slot,
+  .portrait-view .skill-slot { width: 44px; }
+  .mobile-layout .skill-orb,
+  .portrait-view .skill-orb { width: 40px; height: 40px; }
+  .mobile-layout .slot-icon-clip,
+  .portrait-view .slot-icon-clip { width: 34px; height: 34px; }
+  .mobile-layout .slot-frame,
+  .portrait-view .slot-frame { width: 44px; height: 56px; }
+  .mobile-layout .skill-slot > span,
+  .portrait-view .skill-slot > span { font-size: 9px; }
+
+  .mobile-layout .panel,
+  .portrait-view .panel {
+    top: calc(var(--mobile-top, 10px) + 46px);
+    right: var(--mobile-right, 12px);
+    width: min(286px, calc(100vw - 24px));
+    max-height: 70dvh;
+    overflow-y: auto;
+  }
+}
+
+/* ── Landscape Mobile (横屏畅游适配) ─────────────────────────────────────── */
+@media (orientation: landscape) {
+  .mobile-layout #welcome-title {
+    left: var(--mobile-left);
+    top: var(--mobile-top);
+  }
+  .mobile-layout #welcome-title img { width: clamp(155px, min(34vw, 58dvh), 345px); }
+  .mobile-layout .welcome-start { width: clamp(172px, 27vw, 270px); }
+  .mobile-layout .welcome-start:enabled:hover { transform: none; }
+  .mobile-layout .top-bar { top: var(--mobile-top); left: var(--mobile-left); right: var(--mobile-right); }
+  .mobile-layout .touch-controls {
+    --touch-small: clamp(42px, 11.5dvh, 48px);
+    --touch-primary: clamp(54px, 16dvh, 68px);
+    --touch-gap: 6px;
+  }
+  .mobile-layout .touch-stick-zone {
+    left: var(--mobile-left);
+    bottom: var(--mobile-bottom);
+    width: clamp(104px, 32dvh, 134px);
+    height: clamp(104px, 32dvh, 134px);
+  }
+  .mobile-layout .touch-stick-base { width: 80%; height: 80%; }
+  .mobile-layout .touch-stick-knob { width: 38px; height: 38px; }
+  .mobile-layout .touch-action-pad {
+    width: calc(var(--touch-primary) + 2 * var(--touch-small) + 2 * var(--touch-gap));
+    height: calc(var(--touch-primary) + var(--touch-small) + var(--touch-gap));
+    right: var(--mobile-right);
+    bottom: var(--mobile-bottom);
+    transform: none;
+  }
+  .mobile-layout .sub-btn { width: var(--touch-small); height: var(--touch-small); }
+  .mobile-layout .primary-attack-btn { right: 0; bottom: 0; width: var(--touch-primary); height: var(--touch-primary); }
+  .mobile-layout .wave-btn { right: calc(var(--touch-primary) + var(--touch-gap)); bottom: 0; }
+  .mobile-layout .sense-btn { right: calc(var(--touch-primary) + var(--touch-small) + 2 * var(--touch-gap)); bottom: 0; }
+  .mobile-layout .dash-btn { right: calc(2 * (var(--touch-small) + var(--touch-gap))); bottom: calc(var(--touch-primary) + var(--touch-gap)); }
+  .mobile-layout .jump-btn { right: calc(var(--touch-small) + var(--touch-gap)); bottom: calc(var(--touch-primary) + var(--touch-gap)); }
+  .mobile-layout .flight-btn { right: 0; bottom: calc(var(--touch-primary) + var(--touch-gap)); }
+  .mobile-layout .descend-btn { right: calc(var(--touch-primary) + var(--touch-small) + 2 * var(--touch-gap)); bottom: calc(var(--touch-small) + var(--touch-gap)); }
+  .mobile-layout .skill-dock {
+    left: 50%;
+    bottom: var(--mobile-bottom);
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100vw - 2 * max(var(--mobile-left), var(--mobile-right)) - 318px);
+  }
+  .mobile-layout .skill-bar-dynamic { padding: 5px 8px; }
+  .mobile-layout .skill-ornament, .mobile-layout .skill-orb kbd { display: none; }
+  .mobile-layout .skill-slots-row { gap: 3px; }
+  .mobile-layout .skill-slot { width: 42px; }
+  .mobile-layout .skill-orb { width: 42px; height: 42px; }
+  .mobile-layout .slot-icon-clip { width: 35px; height: 35px; }
+  .mobile-layout .slot-frame { width: 44px; height: 56px; }
+  .mobile-layout .skill-slot > span { font-size: 9px; margin-top: 1px; }
+}
+
+@media (orientation: landscape) and (max-height: 460px) {
+  .mobile-layout .compass-bar { display: none; }
+  .mobile-layout .char-card, .mobile-layout .char-panel-stage { width: 196px; height: auto; }
+  .mobile-layout .char-stats-overlay { display: none; }
+  .mobile-layout .minimap-shell { width: 88px; height: 91px; }
+  .mobile-layout .panel {
+    top: calc(var(--mobile-top) + 42px);
+    right: var(--mobile-right);
+    max-height: calc(100dvh - var(--mobile-top) - var(--mobile-bottom) - 46px);
+    overflow-y: auto;
+  }
+}
+
+@media (orientation: landscape) and (max-width: 700px) {
+  .mobile-layout .skill-dock {
+    bottom: calc(var(--mobile-bottom) + clamp(114px, 35dvh, 142px));
+    max-width: calc(100vw - var(--mobile-left) - var(--mobile-right));
+  }
+}

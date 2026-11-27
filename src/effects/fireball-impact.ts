@@ -10,6 +10,7 @@ export const fireballScorchSlots = 6;
 export function createGrassScorchUniforms() {
     return {
         uFireballScorches: { value: Array.from({ length: fireballScorchSlots }, () => new T.Vector4()) },
+        uFireballScorchRadii: { value: Array.from({ length: fireballScorchSlots }, () => 1) },
         uFireballScorchCount: { value: 0 },
     };
 }
@@ -18,6 +19,7 @@ type Impact = {
     position: T.Vector3;
     age: number;
     power: number;
+    scale: number;
     sprite?: T.Sprite;
     ring?: T.Mesh<T.BufferGeometry, T.ShaderMaterial>;
     embers?: T.Points<T.BufferGeometry, T.ShaderMaterial>;
@@ -26,7 +28,7 @@ type Impact = {
 };
 
 function shockwaveMaterial() {
-    return new T.ShaderMaterial({
+    const mat = new T.ShaderMaterial({
         uniforms: { age: { value: 0 } },
         vertexShader: `varying vec2 vUv;
             void main() {
@@ -53,6 +55,8 @@ function shockwaveMaterial() {
         transparent: true, depthWrite: false, toneMapped: false, side: T.DoubleSide, blending: T.AdditiveBlending,
         polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
+    mat.customProgramCacheKey = () => 'fireball-impact-shock-v1';
+    return mat;
 }
 
 function emberGeometry() {
@@ -73,10 +77,10 @@ function emberGeometry() {
 }
 
 function emberMaterial() {
-    return new T.ShaderMaterial({
-        uniforms: { age: { value: 0 }, power: { value: .5 } },
+    const mat = new T.ShaderMaterial({
+        uniforms: { age: { value: 0 }, power: { value: .5 }, uScale: { value: 1 } },
         vertexShader: `
-            uniform float age, power;
+            uniform float age, power, uScale;
             attribute float aSparkKind;
             varying float heat;
             varying float sparkKind;
@@ -90,10 +94,10 @@ function emberMaterial() {
                 vec3 drift;
                 if (isBurst) {
                     // Initial ballistic spark spray bursting out of the crater with gravity arc.
-                    float life = mix(.65, 1.55, seed);
+                    float life = mix(.65, 1.55, seed) * mix(1., 1.35, clamp(uScale - 1., 0., 1.));
                     float t = clamp(age / life, 0., 1.);
-                    float speed = mix(2.4, 6.2, rSeed) * (.85 + .45 * power);
-                    float vy = mix(2.2, 5.4, fract(seed * 7.13)) * (.85 + .35 * power);
+                    float speed = mix(2.4, 6.2, rSeed) * (.85 + .45 * power) * uScale;
+                    float vy = mix(2.2, 5.4, fract(seed * 7.13)) * (.85 + .35 * power) * mix(1., 1.45, clamp((uScale - 1.) * .6, 0., 1.));
                     float dist = speed * (1. - exp(-age * 2.4)) / 2.4;
                     float y = max(.04, .18 + vy * age - 4.6 * age * age);
                     drift = vec3(radial.x * dist, y, radial.y * dist);
@@ -101,19 +105,20 @@ function emberMaterial() {
                 } else {
                     // Swirling thermal convection embers drifting and curling upward from the scorched ground.
                     float cycle = fract(age * mix(.28, .64, seed) + seed * 1.37);
-                    float baseRadius = (.18 + (2.0 + .9 * power) * sqrt(rSeed)) * (1. + cycle * .22);
+                    float baseRadius = (.18 + (2.0 + .9 * power) * uScale * sqrt(rSeed)) * (1. + cycle * .22);
                     float swirl = angle + cycle * mix(1.4, 3.2, rSeed) * (seed > .5 ? 1. : -1.);
                     vec2 posXZ = vec2(cos(swirl), sin(swirl)) * baseRadius
-                        + vec2(sin(cycle * 7.5 + angle), cos(cycle * 6.3 - angle)) * (.16 + .24 * cycle);
-                    float rise = .06 + pow(cycle, .92) * mix(.65, 2.55, seed);
+                        + vec2(sin(cycle * 7.5 + angle), cos(cycle * 6.3 - angle)) * (.16 + .24 * cycle) * uScale;
+                    float rise = .06 + pow(cycle, .92) * mix(.65, 2.55, seed) * mix(1., 1.55, clamp((uScale - 1.) * .6, 0., 1.));
                     drift = vec3(posXZ.x, rise, posXZ.y);
                     float fadeLife = smoothstep(.10, .45, age) * (1. - smoothstep(2.6, 8.8, age));
                     float flicker = .62 + .38 * sin(age * (16. + seed * 14.) + angle * 3.7);
                     heat = sin(cycle * 3.1415926) * (1. - cycle * .45) * fadeLife * flicker;
                 }
                 vec4 point = modelViewMatrix * vec4(drift, 1.);
-                float baseSize = isBurst ? (4.5 + 32. * heat) : (3.6 + 44. * heat);
-                gl_PointSize = heat > .01 ? clamp(baseSize / max(.35, -point.z), 1.6, isBurst ? 9.5 : 11.5) : 0.;
+                float sizeBoost = mix(1., 1.35, clamp((uScale - 1.) * .5, 0., 1.));
+                float baseSize = (isBurst ? (4.5 + 32. * heat) : (3.6 + 44. * heat)) * sizeBoost;
+                gl_PointSize = heat > .01 ? clamp(baseSize / max(.35, -point.z), 1.6, isBurst ? 12. : 14.5) : 0.;
                 gl_Position = projectionMatrix * point;
             }
         `,
@@ -139,11 +144,13 @@ function emberMaterial() {
         `,
         transparent: true, depthWrite: false, toneMapped: false, blending: T.AdditiveBlending,
     });
+    mat.customProgramCacheKey = () => 'fireball-impact-embers-v2';
+    return mat;
 }
 
 function scorchMaterial(surfaceKind: 'stone' | 'soil' | 'grass') {
     const soilMode = surfaceKind === 'soil' ? 1.0 : surfaceKind === 'grass' ? 2.0 : 0.0;
-    return new T.ShaderMaterial({
+    const mat = new T.ShaderMaterial({
         uniforms: { age: { value: 0 }, uSurface: { value: soilMode } },
         vertexShader: `
             varying vec2 sootUV;
@@ -207,16 +214,35 @@ function scorchMaterial(surfaceKind: 'stone' | 'soil' | 'grass') {
         transparent: true, depthWrite: false, toneMapped: false, polygonOffset: true,
         polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
+    mat.customProgramCacheKey = () => 'fireball-impact-scorch-v1';
+    return mat;
 }
 
 export class FireballImpact {
     readonly grassScorches = createGrassScorchUniforms();
+    readonly warmObjects: T.Object3D[] = [];
+    private readonly warmGroup = new T.Group();
+    private readonly warmGeo = new T.PlaneGeometry(1, 1);
+    private readonly warmMats: T.Material[] = [];
     private readonly embers = emberGeometry();
     private readonly impacts = new Set<Impact>();
     private atlas?: T.Texture;
     private disposed = false;
 
-    constructor(private scene: T.Scene, private sampleGround: SampleGround) {}
+    constructor(private scene: T.Scene, private sampleGround: SampleGround) {
+        this.warmGroup.name = 'FireballImpact_WarmGroup';
+        this.warmGroup.visible = false;
+        const wShockMat = shockwaveMaterial();
+        const wEmberMat = emberMaterial();
+        const wScorchMat = scorchMaterial('grass');
+        this.warmMats.push(wShockMat, wEmberMat, wScorchMat);
+        this.warmGroup.add(
+            new T.Mesh(this.warmGeo, wShockMat),
+            new T.Points(this.embers, wEmberMat),
+            new T.Mesh(this.warmGeo, wScorchMat),
+        );
+        this.warmObjects.push(this.warmGroup);
+    }
 
     async load() {
         const texture = await new T.TextureLoader().loadAsync(atlasUrl);
@@ -225,43 +251,53 @@ export class FireballImpact {
         texture.generateMipmaps = false;
         texture.minFilter = T.LinearFilter;
         this.atlas = texture;
+        // Add hidden flipbook sprite to warmGroup so its onBeforeCompile shader pre-compiles too
+        const warmSpriteMat = this.createFlipbookMaterial(texture);
+        this.warmMats.push(warmSpriteMat);
+        this.warmGroup.add(new T.Sprite(warmSpriteMat));
     }
 
-    play(position: T.Vector3, ground?: ImpactGround, onSurface = false, power = .5, groundHeight?: number) {
+    private createFlipbookMaterial(atlas: T.Texture) {
+        const tileOffset = { value: new T.Vector2() };
+        const tileRepeat = { value: new T.Vector2((tile - 1) / (columns * tile), (tile - 1) / (rows * tile)) };
+        const material = new T.SpriteMaterial({ map: atlas, transparent: true, depthWrite: false, toneMapped: false });
+        material.userData.tileOffset = tileOffset;
+        material.customProgramCacheKey = () => 'fireball-impact-flipbook';
+        material.onBeforeCompile = shader => {
+            shader.uniforms.uTileOffset = tileOffset;
+            shader.uniforms.uTileRepeat = tileRepeat;
+            shader.fragmentShader = 'uniform vec2 uTileOffset, uTileRepeat;\n' + shader.fragmentShader.replace(
+                '#include <map_fragment>',
+                `#ifdef USE_MAP
+                    diffuseColor *= texture2D(map, vMapUv * uTileRepeat + uTileOffset);
+                #endif`,
+            );
+        };
+        return material;
+    }
+
+    play(position: T.Vector3, ground?: ImpactGround, onSurface = false, power = .5, groundHeight?: number, scale = 1) {
         const surfacePos = groundHeight !== undefined
             ? new T.Vector3(position.x, groundHeight, position.z)
             : position.clone();
-        const impact: Impact = { position: surfacePos.clone(), age: 0, power, grass: ground === 'grass' && onSurface };
+        const impact: Impact = { position: surfacePos.clone(), age: 0, power, scale, grass: ground === 'grass' && onSurface };
         if (this.atlas) {
-            const tileOffset = { value: new T.Vector2() };
-            const tileRepeat = { value: new T.Vector2((tile - 1) / (columns * tile), (tile - 1) / (rows * tile)) };
-            const material = new T.SpriteMaterial({ map: this.atlas, transparent: true, depthWrite: false, toneMapped: false });
-            material.userData.tileOffset = tileOffset;
-            material.customProgramCacheKey = () => 'fireball-impact-flipbook';
-            material.onBeforeCompile = shader => {
-                shader.uniforms.uTileOffset = tileOffset;
-                shader.uniforms.uTileRepeat = tileRepeat;
-                shader.fragmentShader = 'uniform vec2 uTileOffset, uTileRepeat;\n' + shader.fragmentShader.replace(
-                    '#include <map_fragment>',
-                    `#ifdef USE_MAP
-                        diffuseColor *= texture2D(map, vMapUv * uTileRepeat + uTileOffset);
-                    #endif`,
-                );
-            };
+            const material = this.createFlipbookMaterial(this.atlas);
             const sprite = impact.sprite = new T.Sprite(material);
             sprite.name = 'Fireball Impact Blender Flipbook';
             // Orthographic projection of the ground contact in the source bake.
             sprite.center.set(.5, .35);
             sprite.position.copy(position).y += .07;
-            sprite.scale.setScalar((ground === 'water' ? 6.0 : 7.6) + power * 2.2);
+            sprite.scale.setScalar(((ground === 'water' ? 6.0 : 7.6) + power * 2.2) * scale);
             sprite.renderOrder = 5;
             this.setFrame(sprite, 0);
             this.scene.add(sprite);
         }
-        impact.ring = this.shockwaveMesh(surfacePos, 5.2 + power * 3.0);
+        impact.ring = this.shockwaveMesh(surfacePos, (5.2 + power * 3.0) * scale);
         if (ground !== 'water') {
             const mat = emberMaterial();
             mat.uniforms.power.value = power;
+            mat.uniforms.uScale.value = scale;
             const embers = impact.embers = new T.Points(this.embers, mat);
             embers.name = 'Fireball Ground Embers';
             embers.position.copy(surfacePos);
@@ -270,7 +306,7 @@ export class FireballImpact {
             this.scene.add(embers);
         }
         if (onSurface && (ground === 'stone' || ground === 'soil' || ground === 'grass')) {
-            impact.soot = this.scorchMark(surfacePos, ground, power);
+            impact.soot = this.scorchMark(surfacePos, ground, power, scale);
         }
         this.impacts.add(impact);
         if (this.impacts.size > 24) this.remove(this.impacts.values().next().value!);
@@ -298,9 +334,10 @@ export class FireballImpact {
         return ring;
     }
 
-    private scorchMark(position: T.Vector3, surfaceKind: 'stone' | 'soil' | 'grass', power = .5) {
-        const diameter = 4.9 + power * 2.1;
-        const geometry = new T.PlaneGeometry(diameter, diameter, 14, 14).rotateX(-Math.PI / 2);
+    private scorchMark(position: T.Vector3, surfaceKind: 'stone' | 'soil' | 'grass', power = .5, scale = 1) {
+        const diameter = (4.9 + power * 2.1) * scale;
+        const segs = scale > 1.5 ? 18 : 14;
+        const geometry = new T.PlaneGeometry(diameter, diameter, segs, segs).rotateX(-Math.PI / 2);
         const vertices = geometry.attributes.position;
         for (let i = 0; i < vertices.count; i++) {
             const ground = this.sampleGround(position.x + vertices.getX(i), position.z + vertices.getZ(i), position.y + 1.5);
@@ -346,11 +383,14 @@ export class FireballImpact {
             if (impact.age >= (impact.grass || impact.soot ? residueTime : impact.embers ? 9.0 : frames / frameRate)) this.remove(impact);
         }
         const marks = this.grassScorches.uFireballScorches.value;
+        const radii = this.grassScorches.uFireballScorchRadii.value;
         let i = 0;
         for (const impact of Array.from(this.impacts).reverse()) {
             if (!impact.grass) continue;
             const strength = T.MathUtils.smoothstep(impact.age, 0, .5) * (1 - T.MathUtils.smoothstep(impact.age, 7, residueTime));
-            marks[i++].set(impact.position.x, impact.position.y, impact.position.z, strength);
+            marks[i].set(impact.position.x, impact.position.y, impact.position.z, strength);
+            radii[i] = impact.scale;
+            i++;
             if (i === marks.length) break;
         }
         this.grassScorches.uFireballScorchCount.value = i;
@@ -393,7 +433,7 @@ export class FireballImpact {
                     intensity: (14 + 6 * impact.power) * rise * decay * flicker,
                     distance: 20 + 4 * impact.power,
                     priority: 100,
-                    castShadow: true,
+                    castShadow: false,
                 });
             } else if (impact.embers && impact.age < 6.8) {
                 // Lingering glowing embers & smoldering coals on scorched ground.
@@ -404,8 +444,8 @@ export class FireballImpact {
                     y: p.y + 0.72,
                     z: p.z,
                     color: 0xff4c12,
-                    intensity: 1.45 * fade * flicker,
-                    distance: 8.5,
+                    intensity: 1.45 * fade * flicker * Math.min(2.2, impact.scale),
+                    distance: 8.5 * Math.min(2.4, impact.scale),
                     priority: 40,
                     castShadow: false,
                 });
@@ -421,6 +461,9 @@ export class FireballImpact {
     dispose() {
         this.disposed = true;
         this.clear();
+        this.warmGroup.removeFromParent();
+        this.warmGeo.dispose();
+        for (const mat of this.warmMats) mat.dispose();
         this.embers.dispose();
         this.atlas?.dispose();
     }

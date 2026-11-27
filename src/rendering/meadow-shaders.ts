@@ -30,14 +30,16 @@ ${valleyLandmarksGLSL}
 vec4 mHash(vec2 p){return fract(sin(vec4(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)),dot(p,vec2(419.2,371.9)),dot(p,vec2(173.8,217.1))))*43758.5453);}
 float mNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mHash(i).x,mHash(i+vec2(1.,0.)).x,f.x),mix(mHash(i+vec2(0.,1.)).x,mHash(i+1.).x,f.x),f.y);}
 uniform vec4 uFireballScorches[${fireballScorchSlots}];
+uniform float uFireballScorchRadii[${fireballScorchSlots}];
 uniform int uFireballScorchCount;
 vec3 scorchBlade(vec3 color, vec3 root, float seed){
  float burn=0.;
  for(int i=0;i<${fireballScorchSlots};i++){
    if(i>=uFireballScorchCount)break;
    vec4 stamp=uFireballScorches[i];
+   float rScale=max(1.,uFireballScorchRadii[i]);
    float radius=length(root.xz-stamp.xz)+.46*(seed-.5);
-   float shape=(1.-smoothstep(1.56,2.85,radius))*(1.-smoothstep(.47,1.42,abs(root.y-stamp.y)));
+   float shape=(1.-smoothstep(1.56*rScale,2.85*rScale,radius))*(1.-smoothstep(.47*rScale,1.42*rScale,abs(root.y-stamp.y)));
    burn=max(burn,shape*stamp.w);
  }
  return mix(color, mix(vec3(.062,.037,.018),vec3(.153,.074,.026),seed),burn*.91);

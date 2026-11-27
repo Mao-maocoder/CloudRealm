@@ -6,7 +6,7 @@ import { waterLevelAt } from '../world/geo/geo-core';
 /** A single low-resolution, clipped reflection pass for the main stone bridge. */
 export class BridgeReflection {
     private readonly mirror = new Reflector(new T.PlaneGeometry(1,1), {
-        textureWidth: 512, textureHeight: 288, multisample: 0, clipBias: .0015,
+        textureWidth: 384, textureHeight: 216, multisample: 0, clipBias: .0015,
     });
     readonly uniforms = {
         uBridgeReflection: { value: this.mirror.getRenderTarget().texture },
@@ -22,6 +22,9 @@ export class BridgeReflection {
     private readonly viewProjection = new T.Matrix4();
     private readonly reflectionGroup = new T.Group();
     private readonly skyColor = new T.Color('#94c3da');
+    private readonly lastCamPos = new T.Vector3(Infinity, Infinity, Infinity);
+    private readonly lastCamDir = new T.Vector3();
+    private readonly curCamDir = new T.Vector3();
     private frameParity = 0;
 
     constructor(private readonly scene: T.Scene) {
@@ -33,7 +36,7 @@ export class BridgeReflection {
 
     render(renderer: T.WebGLRenderer, camera: T.PerspectiveCamera) {
         this.stats.calls = this.stats.triangles = 0;
-        if (!this.enabled || !bridgeArtEnabled || camera.position.distanceToSquared(this.center) > 152**2) {
+        if (!this.enabled || !bridgeArtEnabled || camera.position.distanceToSquared(this.center) > 118**2) {
             this.uniforms.uBridgeMirrorOn.value = 0;
             return;
         }
@@ -49,8 +52,13 @@ export class BridgeReflection {
             return;
         }
 
-        // Update the rippling water reflection every second frame to halve secondary pass cost.
-        if (this.uniforms.uBridgeMirrorOn.value > .5 && (++this.frameParity & 1) === 1) return;
+        // Skip redundant reflection passes when camera is stationary, and throttle to every 4th frame while moving.
+        camera.getWorldDirection(this.curCamDir);
+        const moved = this.lastCamPos.distanceToSquared(camera.position) > 0.014
+            || this.lastCamDir.dot(this.curCamDir) < 0.99994;
+        if (this.uniforms.uBridgeMirrorOn.value > .5 && (!moved || (++this.frameParity % 4) !== 0)) return;
+        this.lastCamPos.copy(camera.position);
+        this.lastCamDir.copy(this.curCamDir);
 
         const background = this.scene.background;
         this.scene.background = this.skyColor;

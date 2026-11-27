@@ -20,11 +20,12 @@ export function detectDevice(): DeviceProfile {
     }
     const ua = navigator.userAgent || '';
     const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
-    const mobileUA = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS/i.test(ua);
+    const mobileUA = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS|OpenHarmony|MiuiBrowser|UCBrowser|QQBrowser|MicroMessenger|Quark|SamsungBrowser|XiaoMi|HUAWEI|HONOR|OPPO|vivo/i.test(ua);
     const ipadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
     const isIOS = /iPhone|iPad|iPod/i.test(ua) || ipadOS;
-    const isTouch = coarse || navigator.maxTouchPoints > 0;
-    const isMobile = mobileUA || ipadOS || (coarse && Math.min(window.innerWidth, window.innerHeight) <= 920);
+    const isTouch = coarse || navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+    const shortEdge = Math.min(window.innerWidth || 9999, window.innerHeight || 9999);
+    const isMobile = mobileUA || ipadOS || (isTouch && shortEdge <= 960);
     const navMem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
     const cores = navigator.hardwareConcurrency ?? 8;
     const lowMemory = isMobile || (navMem !== undefined && navMem <= 4) || cores <= 4;
@@ -45,8 +46,8 @@ export class AdaptiveResolutionScaler {
 
     constructor(
         private readonly minScale = 0.62,
-        private readonly stepDownThresholdMs = 21.5,
-        private readonly stepUpThresholdMs = 13.5,
+        private readonly stepDownThresholdMs = 18.8,
+        private readonly stepUpThresholdMs = 13.0,
     ) {}
 
     reset() {

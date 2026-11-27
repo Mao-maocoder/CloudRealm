@@ -14,6 +14,7 @@ import {makeClearingLight,clearingLightGLSL} from './clearing-light';
 import {makeCorridorTexture,riverCorridorGLSL} from './river-corridor-texture';
 import {makeGrassCanopyTexture,grassCanopyGLSL} from './grass-canopy-texture';
 import {valleyLandmarksGLSL} from '../world/geo/valley-landmarks';
+import {bossWastelandGLSL} from '../world/geo/boss-territories';
 import {canopyShadeGLSL,makeCanopyShade} from './canopy-shade';
 import {cascadeCliffGLSL} from './cascade-cliff';
 
@@ -114,6 +115,7 @@ export function createTerrainMaterial() {
         ${riverCorridorGLSL}
         ${grassCanopyGLSL}
         ${valleyLandmarksGLSL}
+        ${bossWastelandGLSL}
         ${canopyShadeGLSL}
         vec4 rockTriplanar(vec3 p,vec3 n,float scale){
             vec3 w=pow(abs(n),vec3(4.));w/=max(dot(w,vec3(1.)),.0001);
@@ -237,8 +239,8 @@ export function createTerrainMaterial() {
             vec4 habitat=riverbankHabitat(worldUV);
             vec4 corridor=riverCorridor(worldUV);
             float dampness=(corridor.r-.5)*2.;
-            float wetBand=smoothstep(.08,.71,dampness);
-            float exposedGravel=smoothstep(.12,.73,-dampness);
+            float wetBand=smoothstep(.08,.71,dampness)*corridor.a;
+            float exposedGravel=smoothstep(.12,.73,-dampness)*corridor.a;
             float forestBand=smoothstep(.13,.70,corridor.g);
             float openPasture=smoothstep(.15,.83,corridor.b);
             vec3 corridorPasture=mix(vec3(.142,.310,.058),vec3(.43,.53,.099),openPasture);
@@ -397,8 +399,9 @@ export function createTerrainMaterial() {
             vec4 crop=valleyFields(worldUV);
             float farmCoverage=crop.x*grassRoadMask*drySurface;
             float ruinCoverage=valleyRuinGround(worldUV);
+            vec2 bossW=bossGroundWeights(worldUV,macro);
             grassCoverage*=(1.-max(exposedGravel*.94,wet*.80))*(1.-deposits)*(1.-peakland)
-                *(1.-max(farmCoverage,ruinCoverage*.95));
+                *(1.-max(farmCoverage,ruinCoverage*.95))*(1.-bossW.x*.94)*(1.-bossW.y*.55);
             grassCoverage=max(grassCoverage,peakGrass*peakland);
             vec2 crownSlope=vec2(0.);
             vec2 crownUV=worldUV+warp*.43;
@@ -446,6 +449,17 @@ export function createTerrainMaterial() {
             vec3 harvest=mix(berm,mix(furrow,ears*canopy,planted),bed);
             diffuseColor.rgb=mix(diffuseColor.rgb,harvest,farmCoverage);
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.285,.302,.208)*(.84+.16*gravel),ruinCoverage*.68);
+            // Desolate weathered ash-slate & scorched ochre wasteland around Dragon Lair (boss2) + ancient stone-earth around Sword Altar (boss1)
+            if(bossW.x>.002){
+                float wCrack=tNoise(worldUV*.085+warp*.18);
+                vec3 ashSlate=mix(vec3(.23,.24,.23),vec3(.39,.34,.25),smoothstep(.22,.82,macro*.65+wCrack*.35));
+                ashSlate*=.82+.28*gravel;
+                diffuseColor.rgb=mix(diffuseColor.rgb,ashSlate,bossW.x*.90);
+            }
+            if(bossW.y>.002){
+                vec3 ruinSoil=mix(vec3(.30,.33,.20),vec3(.42,.39,.29),smoothstep(.25,.78,macro));
+                diffuseColor.rgb=mix(diffuseColor.rgb,ruinSoil,bossW.y*.48);
+            }
             float overlook=smoothstep(85.,242.,cameraPosition.y-vWPos.y);
             float sunPatch=smoothstep(.29,.72,tNoise(worldUV*.0034+vec2(3.1,-7.2))*.78+mott*.22);
             vec3 fieldLight=mix(vec3(.84,.91,.92),vec3(1.22,1.30,1.12),sunPatch);

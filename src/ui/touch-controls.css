@@ -150,6 +150,12 @@
 }
 
 .wave-btn { right: 98px; bottom: 8px; }
+.sense-btn { right: 152px; bottom: 8px; }
+.sense-btn .touch-glyph {
+  font-family: "Ma Shan Zheng", "STXingkai", "STKaiti", "KaiTi", serif;
+  font-size: 19px;
+  color: #a8f8e6;
+}
 .dash-btn { right: 90px; bottom: 70px; }
 .jump-btn { right: 44px; bottom: 112px; }
 .flight-btn { right: 0px; bottom: 102px; }

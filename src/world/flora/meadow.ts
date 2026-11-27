@@ -238,6 +238,7 @@ interface Shell {
     grid: number;
     range: number;
     flower: boolean;
+    nearDetail: boolean;
     field: Field;
 }
 
@@ -336,11 +337,13 @@ export class Meadow {
             };
             const mesh = new T.Mesh(geometry,material);
             mesh.frustumCulled = false;
-            mesh.receiveShadow = true;
+            // Only near grass (<20m) samples the PCF shadow map; mid/far grass & flowers use painterly matte shading.
+            mesh.receiveShadow = !flower && i < 3;
             mesh.renderOrder = 2;
             mesh.visible = false;
             this.group.add(mesh);
-            this.shells.push({mesh,spacing,grid,range:d.fade[3]+1.4,flower,field});
+            const nearDetail = (!flower && i < 3) || (flower && i === 5);
+            this.shells.push({mesh,spacing,grid,range:d.fade[3]+1.4,flower,nearDetail,field});
         }
     }
 
@@ -446,7 +449,13 @@ export class Meadow {
             this.peakFields = [peakTerraceField(), peakSummitField()];
             for (const field of this.peakFields) this.addShells(field, 0, true);
         }
-        for (const {mesh,spacing,grid,range,field} of this.shells) {
+        const aboveGround = pos.y - heightAt(pos.x, pos.z);
+        const skipNearGround = aboveGround > 22;
+        for (const {mesh,spacing,grid,range,nearDetail,field} of this.shells) {
+            if (skipNearGround && nearDetail && field === this.ground) {
+                mesh.visible = false;
+                continue;
+            }
             mesh.visible = hasGrassInRange(field,pos,range);
             if (!mesh.visible) continue;
             const half = Math.floor(grid/2), cx = Math.floor(pos.x/spacing), cz = Math.floor(pos.z/spacing);

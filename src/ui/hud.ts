@@ -3,6 +3,7 @@ import type { Quality } from '../config/settings';
 import type { VitalsSnapshot } from '../player/vitals';
 import { REALMS, SKILL_MANA_COST } from '../player/cultivation';
 import type { SenseDangerIndicator, SenseMarkerProjection } from '../world/wildlife/wildlife';
+import { mobileLayout } from './mobile-layout';
 import { welcome } from './welcome';
 import locationTitleSvg from './assets/hud-svg/location-title.svg';
 import compassSvg from './assets/hud-svg/compass.svg';
@@ -173,7 +174,6 @@ export class HUD {
     private readonly skillLockEls = new Map<string, HTMLElement>();
     private readonly itemQtyEls = new Map<string, HTMLElement>();
     private readonly slots: SkillSlotConfig[];
-    private readonly target = document.createElement('div');
     private readonly combatNotice = document.createElement('div');
     private onUseItem?: (kind: 'heal' | 'pill') => void;
     private onToggleMap?: () => void;
@@ -333,6 +333,10 @@ export class HUD {
 
   <div class="top-right-cluster">
     <div class="utility-btns">
+      <button class="util-btn mobile-only-btn" id="fullscreen-btn" title="切换全屏 / 横屏" aria-label="切换全屏或横屏">
+        <img class="util-btn-bg" src="${toolbarButtonSvg}" alt="" aria-hidden="true"/>
+        <svg class="util-btn-ico" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm14-3h-3V4h5v5h-2V6zM6 15v3h3v2H4v-5h2zm12 3v-3h2v5h-5v-2h3z" fill="currentColor"/></svg>
+      </button>
       <button class="util-btn" id="settings" title="画质与设置" aria-label="画质与设置">
         <img class="util-btn-bg" src="${toolbarButtonSvg}" alt="" aria-hidden="true"/>
         <svg class="util-btn-ico" viewBox="0 0 24 24"><path d="M19.4 13a7.7 7.7 0 0 0 .1-1 7.7 7.7 0 0 0-.1-1l2-1.5-1.9-3.3-2.3.9a7.4 7.4 0 0 0-1.7-1L15.1 3h-3.8l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.3-.9L5 8.9 7 10.4a7.7 7.7 0 0 0-.1 1c0 .3 0 .7.1 1l-2 1.5 1.9 3.3 2.3-.9c.5.4 1.1.8 1.7 1l.4 2.5h3.8l.4-2.5c.6-.2 1.2-.6 1.7-1l2.3.9 1.9-3.3-2-1.5zM13.2 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" fill="currentColor"/></svg>
@@ -552,7 +556,12 @@ export class HUD {
 
         if (detectDevice().isMobile || (typeof window !== 'undefined' && window.innerWidth <= 860)) {
             el('char-card').classList.add('compact');
+            this.testBarBody.classList.add('hidden');
+            el('realm-test-toggle').textContent = '测试 · 一键切境 ▸';
         }
+        el('fullscreen-btn').onclick = () => {
+            void mobileLayout.toggleFullscreenLandscape();
+        };
 
         this.slots = [
             { id: 'fireball', label: '火球术', key: 'E', cost: SKILL_MANA_COST.fireball, icon: iconFireballImg, kind: 'skill', title: `按住蓄力、松开释放火球术 (E · 消耗 ${SKILL_MANA_COST.fireball} 灵力)`, onHoldChange: held => this.onFireballHold?.(held) },
@@ -563,11 +572,9 @@ export class HUD {
         ];
         this.renderSkillBar();
 
-        this.target.className = 'wildlife-target hidden';
-        this.target.innerHTML = '<strong></strong>';
         this.combatNotice.className = 'wildlife-notice hidden';
         this.combatNotice.setAttribute('role', 'status');
-        this.root.append(this.target, this.combatNotice);
+        this.root.append(this.combatNotice);
 
         el<HTMLSelectElement>('quality').value = q;
         welcome.bind(() => {
@@ -901,7 +908,7 @@ export class HUD {
         }
     }
 
-    updateVitals(v: VitalsSnapshot, target: string | undefined, notice: string) {
+    updateVitals(v: VitalsSnapshot, notice: string) {
         const { stats } = v;
         this.realmEl.textContent = stats.fullLabel;
         this.realmEl.style.color = stats.realmColor;
@@ -959,17 +966,6 @@ export class HUD {
             }
         }
 
-        this.target.classList.toggle('hidden', !this.started || !target);
-        if (target) this.target.querySelector('strong')!.textContent = target;
-        this.combatNotice.classList.toggle('hidden', !notice);
-        if (this.combatNotice.textContent !== notice) this.combatNotice.textContent = notice;
-    }
-
-    setWildlife(health: number, target: string | undefined, notice: string) {
-        const pct = Math.max(0, Math.min(100, health));
-        this.hpFill.style.width = `${pct.toFixed(1)}%`;
-        this.target.classList.toggle('hidden', !this.started || !target);
-        if (target) this.target.querySelector('strong')!.textContent = target;
         this.combatNotice.classList.toggle('hidden', !notice);
         if (this.combatNotice.textContent !== notice) this.combatNotice.textContent = notice;
     }

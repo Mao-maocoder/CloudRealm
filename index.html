@@ -4,23 +4,29 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <meta name="theme-color" content="#12485c" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="full-screen" content="yes" />
+  <meta name="x5-fullscreen" content="true" />
+  <meta name="x5-page-mode" content="app" />
   <title>云境 · 长风入谷</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E云%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap" />
-  <link rel="stylesheet" href="/src/ui/welcome.css" />
+  <link rel="stylesheet" href="./src/ui/welcome.css" />
 </head>
 <body>
   <div id="app" inert></div>
   <section class="welcome" id="welcome" data-state="loading" aria-labelledby="welcome-title">
-    <img class="welcome-art" src="/assets/yunjing-welcome.jpg" alt="" fetchpriority="high" />
+    <img class="welcome-art" src="%BASE_URL%assets/yunjing-welcome.jpg" alt="" fetchpriority="high" />
     <h1 id="welcome-title">
-      <img src="/src/ui/assets/launch-ui/yunjing-title.svg" width="610" height="260" alt="云境 · 长风入谷" draggable="false" />
+      <img src="./src/ui/assets/launch-ui/yunjing-title.svg" width="610" height="260" alt="云境 · 长风入谷" draggable="false" />
     </h1>
     <div class="welcome-entry">
       <button type="button" id="start" class="welcome-start" aria-label="启程" disabled hidden>
-        <img src="/src/ui/assets/launch-ui/start-button.svg" width="380" height="86" alt="" draggable="false" />
+        <img src="./src/ui/assets/launch-ui/start-button.svg" width="380" height="86" alt="" draggable="false" />
       </button>
       <div class="welcome-loading">
         <div class="welcome-track">
@@ -83,6 +89,14 @@
       </div>
     </div>
   </section>
-  <script type="module" src="/src/main.ts"></script>
+  <div class="mobile-rotate" id="mobile-rotate" hidden>
+    <div class="mobile-landscape-bar" role="status" aria-live="polite">
+      <span class="mobile-rotate-device" aria-hidden="true"></span>
+      <span class="mobile-rotate-copy" id="mobile-rotate-copy">横屏视野更佳 · 也可竖屏畅游</span>
+      <button type="button" class="mobile-rotate-btn" id="mobile-rotate-lock">全屏横屏</button>
+      <button type="button" class="mobile-rotate-dismiss" id="mobile-rotate-dismiss" aria-label="继续竖屏游玩">×</button>
+    </div>
+  </div>
+  <script type="module" src="./src/main.ts"></script>
 </body>
 </html>

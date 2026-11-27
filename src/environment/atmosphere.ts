@@ -50,6 +50,7 @@ export class Atmosphere {
     private readonly omenVegRim = new T.Color('#ddb668');
     private readonly omenFlashTint = new T.Color('#a8b8e6');
     private readonly tmpOmenSun = new T.Color();
+    private shadowFrame = 0;
 
     setOmen(
         intensity: number,
@@ -197,7 +198,7 @@ export class Atmosphere {
             this.scene.fog.density = this.baseFogDensity * (1 + this.omenIntensity * 0.45);
         }
         const isMobile = detectDevice().isMobile;
-        const shadowSize = quality === 'low' ? 512 : isMobile ? (quality === 'high' ? 1024 : 768) : (quality === 'high' ? 2048 : 1536);
+        const shadowSize = quality === 'low' ? 512 : isMobile ? (quality === 'high' ? 1024 : 768) : (quality === 'high' ? 2048 : 1024);
         if (this.sun.shadow.mapSize.x !== shadowSize) {
             this.sun.shadow.mapSize.set(shadowSize, shadowSize);
             this.sun.shadow.map?.dispose();
@@ -216,6 +217,14 @@ export class Atmosphere {
         this.sun.target.position.set(player.position.x, Math.min(player.position.y, camera.position.y), player.position.z);
         this.sun.position.copy(this.sun.target.position).addScaledVector(lightDir, 500);
         this.sun.target.updateMatrixWorld();
+        // During high-speed flight (>42 m/s), update the directional shadow map every 2nd frame to cut shadow draw calls by 50%.
+        const fastFlight = player.flying && player.velocity.lengthSq() > 42 * 42;
+        if (fastFlight) {
+            this.sun.shadow.autoUpdate = false;
+            this.sun.shadow.needsUpdate = (++this.shadowFrame & 1) === 0;
+        } else {
+            this.sun.shadow.autoUpdate = true;
+        }
         this.sky.update(time, camera);
         this.water.update(time, camera, player);
         this.petals.update(time, camera);

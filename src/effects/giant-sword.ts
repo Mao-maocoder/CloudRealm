@@ -534,12 +534,24 @@ export class GiantSword {
         this.scene.add(this.trailMesh);
     }
 
+    private nascentLoadPromise?: Promise<void>;
+
     get framing() { return this.nascent.framing; }
+    get nascentWarmObjects() { return this.nascent.warmObjects; }
+
+    /** Lazy-loads the 5.8 MB Nascent Soul giant-sword asset only when reaching Core/Nascent realm or idle prefetch. */
+    loadNascent(): Promise<void> {
+        if (this.nascentLoadPromise) return this.nascentLoadPromise;
+        this.nascentLoadPromise = this.nascent.load(new GLTFLoader()).catch(err => {
+            console.warn('元婴巨剑资源加载失败', err);
+            this.nascentLoadPromise = undefined;
+        });
+        return this.nascentLoadPromise;
+    }
 
     async load() {
         const loader = new GLTFLoader();
         await Promise.all([
-            this.nascent.load(loader),
             loader.loadAsync(swordModelUrl).then(gltf => {
                 if (this.disposed) {
                     disposeGltf(gltf);
@@ -547,7 +559,8 @@ export class GiantSword {
                 }
                 gltf.scene.traverse(obj => {
                     if (!(obj instanceof T.Mesh)) return;
-                    obj.castShadow = true;
+                    obj.castShadow = false;
+                    obj.receiveShadow = false;
                     const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
                     for (const mat of mats) {
                         if (!(mat instanceof T.MeshStandardMaterial)) continue;
@@ -717,6 +730,7 @@ export class GiantSword {
         lockedTarget?: { position: T.Vector3; ready: boolean; health: number },
     ) {
         if (nascent && clipTime !== undefined) {
+            if (!this.nascent.ready) void this.loadNascent();
             if (this.activeCast) this.endCast();
             this.nascent.updateCast(clipTime, casterPos, heading, giantSwordLaunchTime,
                 () => this.nascentLanding(camera, casterPos, heading),
@@ -1236,6 +1250,7 @@ export class GiantSword {
     }
 
     collectLights(pool: SpellLightPool) {
+        this.nascent.collectLights(pool);
         if (this.castGroup.visible) {
             const p = this.castGroup.position;
             const boost = 1 + this.phantomOpacity.value * 1.6;
@@ -1247,7 +1262,7 @@ export class GiantSword {
                 intensity: 5.5 * boost,
                 distance: 18,
                 priority: 86,
-                castShadow: true,
+                castShadow: false,
             });
         }
         for (const proj of this.projectiles) {
@@ -1260,7 +1275,7 @@ export class GiantSword {
                 intensity: 9.5,
                 distance: 22,
                 priority: 94,
-                castShadow: true,
+                castShadow: false,
             });
         }
         for (const imp of this.impacts) {

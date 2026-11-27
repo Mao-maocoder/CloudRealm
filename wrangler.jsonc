@@ -1,0 +1,10 @@
+{
+  "name": "yunjing",
+  "compatibility_date": "2026-11-26",
+  "assets": {
+    "directory": "./dist"
+  },
+  "routes": [
+    { "pattern": "yunjing.legal-review.site", "custom_domain": true }
+  ]
+}

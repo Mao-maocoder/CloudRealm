@@ -162,7 +162,7 @@ export class SwordEffects {
                 intensity: 4.2,
                 distance: 13,
                 priority: 78,
-                castShadow: true,
+                castShadow: false,
             });
         }
     }

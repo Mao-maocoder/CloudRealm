@@ -8,10 +8,10 @@ export function bladeGeometry(segs:number,leaves=1){
  const g=new T.InstancedBufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(p,3));g.setAttribute('normal',new T.Float32BufferAttribute(n,3));g.setIndex(idx);return g;
 }
 export function flowerGeometry(near:boolean){
- const positions:number[]=[],indices:number[]=[];if(near){for(let i=0;i<=3;i++)positions.push(-1,i/3,0,1,i/3,0);for(let i=0;i<3;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}}
+ const positions:number[]=[],indices:number[]=[];if(near){for(let i=0;i<=2;i++)positions.push(-1,i/2,0,1,i/2,0);for(let i=0;i<2;i++){const a=i*2;indices.push(a,a+1,a+2,a+1,a+3,a+2);}}
  // The fragment shader draws the scalloped petal outline within a unit disc.
  // Circumscribe that disc so fewer rim vertices still enclose every petal tip.
- const base=positions.length/3,segments=near?10:6;
+ const base=positions.length/3,segments=near?6:4;
  const radius=1/Math.cos(Math.PI/segments);
  positions.push(0,0,1);
  for(let i=0;i<segments;i++){

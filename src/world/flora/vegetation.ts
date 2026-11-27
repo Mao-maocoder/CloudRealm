@@ -12,6 +12,7 @@ import {bridgeArtEnabled,bridgeTrees} from '../geo/bridge-look';
 import {art} from '../../config/art';
 import { bounds, riverSamplesAt, waterSurfaceAt } from '../geo/geo-core';
 import { inBuildingLot } from '../biomes/building-layout';
+import { bossTreeClearance, inBossTerritory } from '../geo/boss-territories';
 import { peaklandWeight } from '../geo/peakland-plan';
 import { isMountainPineHabitat,regionalHabitatAt } from '../geo/regional-habitat';
 import { clearingCoverage } from '../geo/forest-clearing';
@@ -123,7 +124,7 @@ export class Vegetation {
     }
 
     create(x: number, z: number, density: number,lod=0,groundGrass=true): T.Group {
-        const group = new T.Group(), dummy = new T.Object3D(), color = new T.Color();
+        const group = new T.Group(), dummy = new T.Object3D(), color = new T.Color(), sakuraAlt = new T.Color('#ffc3d9');
         const sakuraTrees: number[][] = [], pineTrees: number[][] = [],broadTrees:number[][]=[], grasses: number[][] = [], flowers: number[][] = [], rocks: number[][] = [], reeds: number[][] = [];
         const valleyTrees: number[][][] = Array.from({length:valleyTreeCount},()=>[]);
         const pebbles: number[][]=[], shrubs: number[][]=[], clovers: number[][]=[], bankFlowers: number[][]=[], bankSedges: number[][]=[];
@@ -181,7 +182,7 @@ export class Vegetation {
             if (randomAt(px,pz,25) >= (valley||extra?chance:regionalChance))
                 continue;
             const scale = .75 + randomAt(px, pz, 3) * .85;
-            if (!canPlantTree(px, pz, 1.65 * scale) || inBuildingLot(px,pz,4.6*scale))
+            if (!canPlantTree(px, pz, 1.65 * scale) || inBuildingLot(px,pz,4.6*scale) || bossTreeClearance(px, pz, 4.5 * scale))
                 continue;
             const pinkGrove=Math.hypot((px-690)/360,(pz+460)/430)<1 || Math.hypot((px-110)/160,(pz+230)/220)<1;
             const pineSuit=isMountainPineHabitat(pz,h,slope);
@@ -295,7 +296,7 @@ export class Vegetation {
         const meadowShrubAttempts = Math.max(12, Math.round(42 * density));
         for (let i = 0; i < meadowShrubAttempts; i++) {
             const sx = x + randomAt(x + i, z, 421) * 128, sz = z + randomAt(x, z + i, 422) * 128;
-            if (trailDistance(sx, sz) < 4.0 || inBuildingLot(sx, sz, 2.5) || peaklandWeight(sx, sz) > .55) continue;
+            if (trailDistance(sx, sz) < 4.0 || inBuildingLot(sx, sz, 2.5) || bossTreeClearance(sx, sz, 2.0) || peaklandWeight(sx, sz) > .55) continue;
             if (bambooSeaRadius(sx, sz) < .92 || valleyFieldsAt(sx, sz) > .12 || clearingCoverage(sx, sz) > .42) continue;
             const sy = heightAt(sx, sz);
             if (sy < waterLevelAt(sz) + 1.4 || sy > upliftAt(sz) + 145 || !canPlantTree(sx, sz, .7)) continue;
@@ -324,7 +325,7 @@ export class Vegetation {
                 if (kind === 0) {
                     dummy.scale.set(s, s * (.9 + randomAt(px, pz, 31) * .25), s);
                     if(px < -360 && pz < -100 && pz > -1000)color.set('#f69b60').multiplyScalar(.88+randomAt(px,pz,33)*.22);
-                    else color.set('#ffd9e5').lerp(new T.Color('#ffc3d9'),randomAt(px,pz,32))
+                    else color.set('#ffd9e5').lerp(sakuraAlt,randomAt(px,pz,32))
                         .multiplyScalar(.91+randomAt(px,pz,34)*.17);
                 }
                 else if (kind === 1) {
@@ -414,8 +415,9 @@ export class Vegetation {
                 mesh.instanceColor.needsUpdate = true;
             mesh.computeBoundingSphere();
             mesh.boundingSphere!.radius+=.6;
-            mesh.castShadow = kind !== 2 && kind !== 3 && kind !== 6 && kind !== 9 && kind < 11;
-            mesh.receiveShadow = kind === -1 || kind === 0 || kind === 1 || (kind === 2&&lod===0) || kind === 5 || kind>=7;
+            // Only trees & large rocks cast shadows; skip alpha-tested shrub shadow passes to save ~35% shadow-map fill.
+            mesh.castShadow = kind !== 2 && kind !== 3 && kind !== 6 && kind !== 9 && kind < 10;
+            mesh.receiveShadow = kind === -1 || kind === 0 || kind === 1 || (kind === 2&&lod===0) || kind === 5 || kind === 7 || kind === 8;
             if (kind === 0) mesh.customDepthMaterial = this.blossomDepth;
             else if (kind === 1 || kind === 7 || kind === 8 || kind === 10) mesh.customDepthMaterial = this.leafDepth;
             group.add(mesh);

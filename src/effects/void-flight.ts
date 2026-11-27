@@ -24,10 +24,10 @@ interface FloatingCloud {
 }
 
 const MAX_RIPPLES = 18;
-const TRAIL_POINTS = 40;
-const GOLD_SPARK_COUNT = 68;
-const DIAMOND_SHARD_COUNT = 20;
-const CLOUD_SPRITE_COUNT = 5;
+const TRAIL_POINTS = 24;
+const GOLD_SPARK_COUNT = 30;
+const DIAMOND_SHARD_COUNT = 12;
+const CLOUD_SPRITE_COUNT = 2;
 
 const RIPPLE_TEX_URL = new URL('../../resource/fly/nascent/spatial_ripple_rgba.png', import.meta.url).href;
 const HOVER_PAD_TEX_URL = new URL('../../resource/fly/nascent/spatial_hover_pad_rgba.png', import.meta.url).href;
@@ -110,6 +110,8 @@ export class VoidFlightEffects {
 
     get warmObjects(): readonly T.Object3D[] {
         const list: T.Object3D[] = [
+            this.group,
+            this.lightGroup,
             this.hoverPad,
             this.haloSprite,
             this.coreFlareMesh,
@@ -118,6 +120,7 @@ export class VoidFlightEffects {
             this.goldDust,
             this.diamondShards,
         ];
+        if (this.rippleMeshes[0]) list.push(this.rippleMeshes[0]);
         if (this.escapeModel) list.push(this.escapeModel);
         return list;
     }
@@ -181,6 +184,7 @@ export class VoidFlightEffects {
                     }
                 `,
             });
+            mat.customProgramCacheKey = () => 'void-flight-ripple-v1';
             const mesh = new T.Mesh(this.rippleGeo, mat);
             mesh.visible = false;
             mesh.renderOrder = 5;
@@ -240,24 +244,25 @@ export class VoidFlightEffects {
                 }
             `,
         });
+        this.hoverPadMat.customProgramCacheKey = () => 'void-flight-hoverpad-v1';
         this.hoverPad = new T.Mesh(this.rippleGeo, this.hoverPadMat);
         this.hoverPad.scale.setScalar(2.75);
         this.hoverPad.visible = false;
         this.hoverPad.renderOrder = 4;
         this.group.add(this.hoverPad);
 
-        // 2. Escape Light Layer 1: Leading Golden Double Halo Ring + Rim Clouds (always faces camera!)
+        // 2. Escape Light Layer 1: Leading Golden Double Halo Ring (subtle, translucent — no daytime white blowout)
         this.haloMat = new T.SpriteMaterial({
             map: this.dummyTex,
             transparent: true,
             opacity: 0,
             depthWrite: false,
             blending: T.AdditiveBlending,
-            toneMapped: false,
+            toneMapped: true,
         });
         this.haloSprite = new T.Sprite(this.haloMat);
         this.haloSprite.position.set(0, 0, 1.22);
-        this.haloSprite.scale.setScalar(2.95);
+        this.haloSprite.scale.setScalar(1.95);
         this.haloSprite.renderOrder = 7;
         this.lightGroup.add(this.haloSprite);
 
@@ -304,28 +309,29 @@ export class VoidFlightEffects {
                     vec2 p2 = vec2(0.7071 * (vUv.x - vUv.y), 0.7071 * (vUv.x + vUv.y));
                     float rayDiag = (exp(-abs(p2.y) * 32.0) * exp(-abs(p2.x) * 3.0) + exp(-abs(p2.x) * 32.0) * exp(-abs(p2.y) * 3.0)) * 0.55;
 
-                    vec3 col = mix(vec3(0.45, 0.88, 1.0), vec3(1.0, 0.90, 0.62), smoothstep(0.0, 0.6, halo));
-                    col = mix(col, vec3(1.0, 0.99, 0.95), clamp(core * 1.1 + (rayMain + rayDiag) * 0.65, 0.0, 1.0));
-                    float alpha = (core * 1.2 + halo + rayMain + rayDiag) * pulse * uAlpha;
-                    gl_FragColor = vec4(col * 1.35, clamp(alpha, 0.0, 1.0));
+                    vec3 col = mix(vec3(0.32, 0.84, 0.96), vec3(1.0, 0.88, 0.56), smoothstep(0.0, 0.6, halo));
+                    col = mix(col, vec3(0.96, 0.99, 1.0), clamp(core * 0.85 + (rayMain + rayDiag) * 0.45, 0.0, 1.0));
+                    float alpha = (core * 0.62 + halo * 0.48 + (rayMain + rayDiag) * 0.45) * pulse * uAlpha;
+                    gl_FragColor = vec4(col * 0.92, clamp(alpha, 0.0, 0.65));
                 }
             `,
         });
+        this.coreFlareMat.customProgramCacheKey = () => 'void-flight-coreflare-v1';
         this.coreFlareMesh = new T.Mesh(new T.PlaneGeometry(1, 1), this.coreFlareMat);
-        this.coreFlareMesh.position.set(0, 0.08, 1.48);
-        this.coreFlareMesh.scale.setScalar(2.65);
+        this.coreFlareMesh.position.set(0, 0.08, 1.38);
+        this.coreFlareMesh.scale.setScalar(1.45);
         this.coreFlareMesh.renderOrder = 8;
         this.lightGroup.add(this.coreFlareMesh);
 
-        // 4. Drifting Golden Auspicious Cloud Motifs (auspicious_cloud_gold.png)
+        // 4. Drifting Golden Auspicious Cloud Motifs (delicate translucent normal-blended wisps)
         for (let i = 0; i < CLOUD_SPRITE_COUNT; i++) {
             const mat = new T.SpriteMaterial({
                 map: this.dummyTex,
                 transparent: true,
                 opacity: 0,
                 depthWrite: false,
-                blending: T.AdditiveBlending,
-                toneMapped: false,
+                blending: T.NormalBlending,
+                toneMapped: true,
             });
             const sprite = new T.Sprite(mat);
             sprite.renderOrder = 7;
@@ -378,6 +384,7 @@ export class VoidFlightEffects {
                 }
             `,
         });
+        this.burstMat.customProgramCacheKey = () => 'void-flight-burst-v1';
         this.burstMesh = new T.Mesh(new T.PlaneGeometry(1, 1), this.burstMat);
         this.burstMesh.visible = false;
         this.burstMesh.renderOrder = 8;
@@ -419,7 +426,7 @@ export class VoidFlightEffects {
             transparent: true,
             depthWrite: false,
             side: T.DoubleSide,
-            blending: T.AdditiveBlending,
+            blending: T.NormalBlending,
             vertexShader: /* glsl */ `
                 varying vec2 vUv;
                 void main() {
@@ -437,35 +444,36 @@ export class VoidFlightEffects {
                 void main() {
                     float along = vUv.x; // 0 = head, 1 = far tail
                     float across = abs(vUv.y * 2.0 - 1.0);
-                    float tailFade = pow(1.0 - along, 1.45) * smoothstep(0.0, 0.04, along);
+                    float tailFade = pow(1.0 - along, 1.85) * smoothstep(0.0, 0.06, along);
 
-                    float silk = 0.7;
-                    float mist = 0.5;
+                    float silk = 0.65;
+                    float mist = 0.45;
                     if (uHasMist > 0.5) {
                         vec4 mA = texture2D(uMistMap, vec2(vUv.y * 1.2, along * 2.2 - uTime * 3.4));
                         vec4 mB = texture2D(uMistMap, vec2(vUv.y * 2.0 + 0.31, along * 3.6 - uTime * 5.0));
-                        silk = clamp(mA.r * 0.7 + mB.r * 0.55, 0.0, 1.2);
-                        mist = clamp(mA.g * 0.75 + mB.g * 0.45, 0.0, 1.1);
+                        silk = clamp(mA.r * 0.65 + mB.r * 0.50, 0.0, 1.1);
+                        mist = clamp(mA.g * 0.70 + mB.g * 0.42, 0.0, 1.0);
                     }
 
-                    // Razor-bright glacial cyan-white core spear
-                    float coreSpear = exp(-across * across * 14.0) * (0.65 + 0.65 * silk);
-                    // Delicate champagne-gold inner thread weaving slightly off-center
+                    // Translucent glacier-cyan silk stream + delicate champagne-gold inner thread (never clips to solid white!)
+                    float coreSpear = exp(-across * across * 16.0) * (0.48 + 0.52 * silk);
                     float goldCenter = sin(along * 9.0 - uTime * 7.5) * 0.16;
-                    float goldThread = exp(-pow((vUv.y * 2.0 - 1.0 - goldCenter) / 0.11, 2.0)) * (0.45 + 0.75 * silk) * (1.0 - along * 0.5);
-                    // Billowing pale cyan-white ink-cloud skirt on flanks
-                    float cloudSkirt = exp(-across * across * 2.2) * mist * 0.58;
+                    float goldThread = exp(-pow((vUv.y * 2.0 - 1.0 - goldCenter) / 0.10, 2.0)) * (0.40 + 0.60 * silk) * (1.0 - along * 0.5);
+                    float cloudSkirt = exp(-across * across * 2.8) * mist * 0.36;
 
-                    vec3 cyanCol = mix(vec3(0.88, 0.98, 1.0), vec3(0.22, 0.78, 1.0), smoothstep(0.0, 0.72, along));
-                    vec3 mistCol = vec3(0.68, 0.88, 0.98);
-                    vec3 goldCol = vec3(1.0, 0.86, 0.48);
+                    vec3 cyanCol = mix(vec3(0.46, 0.90, 0.96), vec3(0.16, 0.68, 0.88), smoothstep(0.0, 0.72, along));
+                    vec3 mistCol = vec3(0.56, 0.86, 0.94);
+                    vec3 goldCol = vec3(0.98, 0.84, 0.46);
 
-                    vec3 col = cyanCol * coreSpear * 1.35 + mistCol * cloudSkirt + goldCol * goldThread * 0.95;
-                    float alpha = (coreSpear + cloudSkirt + goldThread * 0.65) * tailFade * uAlpha;
-                    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.95));
+                    float weightSum = max(0.001, coreSpear + cloudSkirt + goldThread * 0.65);
+                    vec3 col = (cyanCol * coreSpear + mistCol * cloudSkirt + goldCol * goldThread * 0.75) / weightSum;
+                    col = mix(col, vec3(0.92, 0.99, 1.0), coreSpear * (1.0 - along) * 0.32);
+                    float alpha = (coreSpear * 0.42 + cloudSkirt * 0.34 + goldThread * 0.36) * tailFade * uAlpha;
+                    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.44));
                 }
             `,
         });
+        this.trailMat.customProgramCacheKey = () => 'void-flight-trail-v1';
         this.trailMesh = new T.Mesh(this.trailGeo, this.trailMat);
         this.trailMesh.frustumCulled = false;
         this.trailMesh.visible = false;
@@ -528,11 +536,12 @@ export class VoidFlightEffects {
                     vec3 gold = vec3(1.0, 0.86, 0.44);
                     vec3 cyan = vec3(0.55, 0.94, 1.0);
                     vec3 col = mix(gold, cyan, step(0.65, vGold));
-                    col = mix(col, vec3(1.0, 0.99, 0.94), clamp(core, 0.0, 1.0));
-                    gl_FragColor = vec4(col * 1.35, clamp((core + crossStar) * vFade * uAlpha, 0.0, 1.0));
+                    col = mix(col, vec3(0.98, 0.99, 0.96), clamp(core * 0.7, 0.0, 1.0));
+                    gl_FragColor = vec4(col * 0.95, clamp((core + crossStar) * vFade * uAlpha * 0.56, 0.0, 0.72));
                 }
             `,
         });
+        this.goldDustMat.customProgramCacheKey = () => 'void-flight-dust-v1';
         this.goldDust = new T.Points(dustGeo, this.goldDustMat);
         this.goldDust.renderOrder = 8;
         this.lightGroup.add(this.goldDust);
@@ -591,11 +600,12 @@ export class VoidFlightEffects {
                     vec3 cyanShard = vec3(0.38, 0.90, 1.0);
                     vec3 goldShard = vec3(1.0, 0.86, 0.46);
                     vec3 baseCol = mix(cyanShard, goldShard, vWarm);
-                    vec3 col = mix(baseCol, vec3(1.0, 0.99, 1.0), center * 0.85);
-                    gl_FragColor = vec4(col * 1.35, clamp(facet * vFade * uAlpha * 0.95, 0.0, 1.0));
+                    vec3 col = mix(baseCol, vec3(0.96, 0.99, 1.0), center * 0.55);
+                    gl_FragColor = vec4(col * 0.95, clamp(facet * vFade * uAlpha * 0.54, 0.0, 0.68));
                 }
             `,
         });
+        this.diamondShardMat.customProgramCacheKey = () => 'void-flight-shard-v1';
         this.diamondShards = new T.Points(shardGeo, this.diamondShardMat);
         this.diamondShards.renderOrder = 8;
         this.lightGroup.add(this.diamondShards);
@@ -661,7 +671,7 @@ export class VoidFlightEffects {
     private installEscapeLightModel(model: T.Group) {
         const mistTex = this.cloudMistTex ?? this.dummyTex;
 
-        // 1. Leading Spirit Bubble shader (translucent ice-blue swirl interior + luminous golden Fresnel rim)
+        // 1. Leading Spirit Bubble shader (delicate translucent celadon-ice swirl + subtle golden Fresnel rim)
         const makeBubbleMat = () => {
             const mat = new T.ShaderMaterial({
                 uniforms: {
@@ -672,7 +682,7 @@ export class VoidFlightEffects {
                 transparent: true,
                 depthWrite: false,
                 side: T.FrontSide,
-                blending: T.AdditiveBlending,
+                blending: T.NormalBlending,
                 vertexShader: /* glsl */ `
                     varying vec2 vUv;
                     varying vec3 vNormal;
@@ -697,21 +707,23 @@ export class VoidFlightEffects {
                         float fresnel = pow(1.0 - ndotv, 2.2);
                         float rimSharp = pow(1.0 - ndotv, 5.2);
                         vec4 swirl = texture2D(uMistMap, vec2(vUv.x * 2.0 + uTime * 0.45, vUv.y * 2.0 - uTime * 1.4));
-                        vec3 iceBlue = vec3(0.26, 0.80, 1.0);
-                        vec3 goldRim = vec3(1.0, 0.88, 0.50);
-                        vec3 col = mix(iceBlue * (0.45 + 0.85 * swirl.r), goldRim, clamp(rimSharp * 1.4, 0.0, 1.0));
-                        float alpha = (fresnel * 0.72 + rimSharp * 0.85 + swirl.r * 0.22 * (1.0 - ndotv * 0.5)) * uAlpha;
-                        gl_FragColor = vec4(col * 1.2, clamp(alpha, 0.0, 0.92));
+                        vec3 iceBlue = vec3(0.24, 0.78, 0.94);
+                        vec3 goldRim = vec3(0.98, 0.86, 0.48);
+                        vec3 col = mix(iceBlue * (0.62 + 0.48 * swirl.r), goldRim, clamp(rimSharp * 1.2, 0.0, 1.0));
+                        float alpha = (fresnel * 0.44 + rimSharp * 0.48 + swirl.r * 0.14 * (1.0 - ndotv * 0.5)) * uAlpha;
+                        gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.52));
                     }
                 `,
             });
+            mat.customProgramCacheKey = () => 'void-flight-bubble-v1';
             this.escapeUniformMaterials.push(mat);
             return mat;
         };
 
-        // 2. Flowing Spear / Cloud-Mist / Silk Ribbon shader matching the reference's icy-cyan + gold palette
+        // 2. Flowing Spear / Cloud-Mist / Silk Ribbon shader (refined translucent celadon-cyan & champagne-gold)
         const makeFlowMat = (mode: 'spear' | 'mist' | 'goldRibbon' | 'cyanRibbon') => {
             const modeId = mode === 'spear' ? 0 : mode === 'mist' ? 1 : mode === 'goldRibbon' ? 2 : 3;
+            const isMist = mode === 'mist';
             const mat = new T.ShaderMaterial({
                 uniforms: {
                     uMistMap: { value: mistTex },
@@ -722,7 +734,7 @@ export class VoidFlightEffects {
                 transparent: true,
                 depthWrite: false,
                 side: T.DoubleSide,
-                blending: T.AdditiveBlending,
+                blending: isMist ? T.NormalBlending : T.AdditiveBlending,
                 vertexShader: /* glsl */ `
                     varying vec2 vUv;
                     varying vec3 vNormal;
@@ -749,52 +761,52 @@ export class VoidFlightEffects {
                         float along = vUv.y; // 0 = front, 1 = tail
 
                         if (uMode < 0.5) {
-                            // Mode 0: Blazing Glacial-Cyan & White Inner Spear Core with subtle golden thread
+                            // Mode 0: Sleek Glacial-Cyan Inner Spear Core with subtle golden thread
                             vec4 s1 = texture2D(uMistMap, vec2(vUv.x * 2.2, along * 2.4 - uTime * 4.8));
                             vec4 s2 = texture2D(uMistMap, vec2(vUv.x * 4.0 + 0.27, along * 4.2 - uTime * 6.8));
-                            float silk = clamp(s1.r * 0.72 + s2.r * 0.65, 0.0, 1.3);
-                            float env = smoothstep(0.0, 0.06, along) * pow(1.0 - along, 0.85);
-                            float core = pow(ndotv, 1.15) * 0.9 + pow(1.0 - ndotv, 1.8) * 0.55;
-                            vec3 col = mix(vec3(0.24, 0.82, 1.0), vec3(0.95, 0.99, 1.0), clamp(silk * 0.55 + (1.0 - along) * 0.45, 0.0, 1.0));
-                            // Subtle golden energy glint braided in the heart
+                            float silk = clamp(s1.r * 0.65 + s2.r * 0.55, 0.0, 1.1);
+                            float env = smoothstep(0.0, 0.08, along) * pow(1.0 - along, 1.15);
+                            float core = pow(ndotv, 1.25) * 0.72 + pow(1.0 - ndotv, 2.0) * 0.36;
+                            vec3 col = mix(vec3(0.20, 0.76, 0.94), vec3(0.86, 0.97, 1.0), clamp(silk * 0.45 + (1.0 - along) * 0.35, 0.0, 1.0));
                             float goldHit = smoothstep(0.72, 0.96, s2.b) * (1.0 - along * 0.4);
-                            col = mix(col, vec3(1.0, 0.88, 0.52), goldHit * 0.55);
-                            float alpha = core * (0.48 + 0.75 * silk) * env * uAlpha;
-                            gl_FragColor = vec4(col * 1.35, clamp(alpha, 0.0, 1.0));
+                            col = mix(col, vec3(0.98, 0.86, 0.48), goldHit * 0.50);
+                            float alpha = core * (0.28 + 0.46 * silk) * env * uAlpha;
+                            gl_FragColor = vec4(col * 0.92, clamp(alpha, 0.0, 0.46));
                         } else if (uMode < 1.5) {
-                            // Mode 1: Billowing Ethereal Pale-Cyan Ink-Cloud Mist Veil
+                            // Mode 1: Ethereal Pale-Cyan Ink-Cloud Mist Veil (NormalBlending keeps color depth in daylight)
                             vec4 m1 = texture2D(uMistMap, vec2(vUv.x * 1.6, along * 1.8 - uTime * 2.6));
                             vec4 m2 = texture2D(uMistMap, vec2(vUv.x * 2.6 + 0.4, along * 2.8 - uTime * 3.8));
-                            float cloud = clamp(m1.g * 0.75 + m2.g * 0.55, 0.0, 1.1);
-                            float fresnel = pow(1.0 - ndotv, 1.35) * 0.85 + 0.22;
-                            float env = smoothstep(0.0, 0.14, along) * pow(1.0 - along, 1.05);
-                            vec3 col = mix(vec3(0.45, 0.84, 0.98), vec3(0.88, 0.96, 1.0), cloud * 0.65);
-                            float alpha = fresnel * cloud * env * 0.58 * uAlpha;
-                            gl_FragColor = vec4(col * 1.1, clamp(alpha, 0.0, 0.78));
+                            float cloud = clamp(m1.g * 0.70 + m2.g * 0.48, 0.0, 1.0);
+                            float fresnel = pow(1.0 - ndotv, 1.45) * 0.75 + 0.18;
+                            float env = smoothstep(0.0, 0.14, along) * pow(1.0 - along, 1.25);
+                            vec3 col = mix(vec3(0.36, 0.78, 0.92), vec3(0.80, 0.94, 0.98), cloud * 0.55);
+                            float alpha = fresnel * cloud * env * 0.28 * uAlpha;
+                            gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.30));
                         } else if (uMode < 2.5) {
-                            // Mode 2: Sweeping Champagne-Gold Silk Ribbon (鎏金仙绫)
+                            // Mode 2: Delicate Champagne-Gold Silk Ribbon (鎏金仙绫)
                             float across = abs(vUv.x * 2.0 - 1.0);
                             vec4 f = texture2D(uMistMap, vec2(vUv.x * 1.2, along * 2.6 - uTime * 3.8));
-                            float edgeGlow = exp(-pow((across - 0.78) / 0.16, 2.0)) * 0.95;
-                            float bodySilk = exp(-across * across * 2.6) * (0.35 + 0.65 * f.r);
-                            float env = smoothstep(0.0, 0.08, along) * pow(1.0 - along, 0.78);
-                            vec3 col = mix(vec3(0.96, 0.76, 0.34), vec3(1.0, 0.96, 0.78), clamp(edgeGlow + f.r * 0.45, 0.0, 1.0));
-                            float alpha = (edgeGlow + bodySilk) * env * 0.92 * uAlpha;
-                            gl_FragColor = vec4(col * 1.32, clamp(alpha, 0.0, 0.98));
+                            float edgeGlow = exp(-pow((across - 0.78) / 0.16, 2.0)) * 0.78;
+                            float bodySilk = exp(-across * across * 2.8) * (0.22 + 0.48 * f.r);
+                            float env = smoothstep(0.0, 0.08, along) * pow(1.0 - along, 0.95);
+                            vec3 col = mix(vec3(0.94, 0.74, 0.32), vec3(1.0, 0.93, 0.70), clamp(edgeGlow + f.r * 0.38, 0.0, 1.0));
+                            float alpha = (edgeGlow + bodySilk) * env * 0.46 * uAlpha;
+                            gl_FragColor = vec4(col * 0.94, clamp(alpha, 0.0, 0.50));
                         } else {
-                            // Mode 3: Billowing Glacial-Cyan Cloud Silk Ribbon (冰青流云缎带)
+                            // Mode 3: Translucent Glacial-Cyan Cloud Silk Ribbon (冰青流云缎带)
                             float across = abs(vUv.x * 2.0 - 1.0);
                             vec4 f = texture2D(uMistMap, vec2(vUv.x * 1.5, along * 2.8 - uTime * 4.4));
-                            float edgeGlow = exp(-pow((across - 0.72) / 0.22, 2.0)) * 0.78;
-                            float bodySilk = exp(-across * across * 2.0) * (0.28 + 0.78 * max(f.r, f.g * 0.85));
-                            float env = smoothstep(0.0, 0.08, along) * pow(1.0 - along, 0.82);
-                            vec3 col = mix(vec3(0.28, 0.80, 1.0), vec3(0.90, 0.98, 1.0), clamp(edgeGlow * 0.7 + f.r * 0.5, 0.0, 1.0));
-                            float alpha = (edgeGlow + bodySilk) * env * 0.86 * uAlpha;
-                            gl_FragColor = vec4(col * 1.25, clamp(alpha, 0.0, 0.95));
+                            float edgeGlow = exp(-pow((across - 0.72) / 0.22, 2.0)) * 0.62;
+                            float bodySilk = exp(-across * across * 2.2) * (0.20 + 0.52 * max(f.r, f.g * 0.85));
+                            float env = smoothstep(0.0, 0.08, along) * pow(1.0 - along, 0.98);
+                            vec3 col = mix(vec3(0.24, 0.76, 0.94), vec3(0.80, 0.95, 1.0), clamp(edgeGlow * 0.6 + f.r * 0.4, 0.0, 1.0));
+                            float alpha = (edgeGlow + bodySilk) * env * 0.42 * uAlpha;
+                            gl_FragColor = vec4(col * 0.92, clamp(alpha, 0.0, 0.46));
                         }
                     }
                 `,
             });
+            mat.customProgramCacheKey = () => isMist ? 'void-flight-flow-mist-v1' : 'void-flight-flow-add-v1';
             this.escapeUniformMaterials.push(mat);
             return mat;
         };
@@ -968,14 +980,14 @@ export class VoidFlightEffects {
             this.quat.setFromUnitVectors(this.baseZ, this.forward);
             this.lightGroup.quaternion.copy(this.quat);
 
-            // Golden halo ring billboard at front
+            // Golden halo ring billboard at front (gentle translucency, no daytime blowout)
             this.haloSprite.visible = true;
-            this.haloMat.opacity = this.lightBlend * 0.96;
+            this.haloMat.opacity = this.lightBlend * 0.42;
             this.haloMat.rotation = this.time * 0.35;
-            const haloS = (2.75 + 0.14 * Math.sin(this.time * 5.0)) * (0.75 + 0.25 * this.lightBlend);
+            const haloS = (1.95 + 0.10 * Math.sin(this.time * 5.0)) * (0.78 + 0.22 * this.lightBlend);
             this.haloSprite.scale.setScalar(haloS);
 
-            // Blazing warm-white starburst flare inside front of sphere
+            // Soft warm-white starburst flare inside front of sphere
             this.coreFlareMesh.visible = true;
             this.coreFlareMat.uniforms.uTime.value = this.time;
             this.coreFlareMat.uniforms.uAlpha.value = this.lightBlend;
@@ -983,29 +995,28 @@ export class VoidFlightEffects {
             // Blender 3D bubble + spear + mist veil + gold & cyan silk ribbons
             if (this.escapeModel) {
                 this.escapeModel.visible = true;
-                // Gentle graceful celestial undulation rather than fast mechanical drilling
                 this.escapeModel.rotation.z = this.time * 0.65 + Math.sin(this.time * 2.1) * 0.22;
-                const s = 0.84 + 0.12 * this.lightBlend;
-                this.escapeModel.scale.set(s, s, s * (0.94 + 0.22 * this.lightBlend));
+                const s = 0.78 + 0.10 * this.lightBlend;
+                this.escapeModel.scale.set(s, s, s * (0.92 + 0.18 * this.lightBlend));
             }
             for (const mat of this.escapeUniformMaterials) {
                 mat.uniforms.uTime.value = this.time;
                 mat.uniforms.uAlpha.value = this.lightBlend;
             }
 
-            // Drifting golden auspicious cloud motifs riding along the silk wake
+            // Delicate drifting golden auspicious cloud wisps riding along the silk wake
             for (const c of this.clouds) {
                 const t = (c.phase + this.time * c.speed) % 1;
                 const a = c.angle + t * 1.45;
-                const rad = c.radius * (0.68 + 0.55 * Math.sin(t * Math.PI));
-                const z = 1.65 - t * 8.4;
+                const rad = c.radius * (0.72 + 0.48 * Math.sin(t * Math.PI));
+                const z = 1.4 - t * 6.8;
                 c.sprite.visible = true;
                 c.sprite.position.set(Math.cos(a) * rad, Math.sin(a) * rad, z);
                 const env = Math.sin(Math.min(1, t * 4.5) * Math.PI * 0.5) * (1 - Math.pow(t, 1.4));
-                c.sprite.material.opacity = env * 0.92 * this.lightBlend;
+                c.sprite.material.opacity = env * 0.28 * this.lightBlend;
                 c.sprite.material.rotation = Math.sin(this.time * 1.5 + c.angle) * 0.18;
-                const sc = c.baseScale * (0.8 + 0.35 * (1 - t));
-                c.sprite.scale.set(sc * 1.85, sc * 0.92, 1);
+                const sc = c.baseScale * (0.68 + 0.25 * (1 - t));
+                c.sprite.scale.set(sc * 1.55, sc * 0.76, 1);
             }
 
             // Sparkling golden dust & crisp cyan diamond shards
@@ -1045,7 +1056,7 @@ export class VoidFlightEffects {
                 this.sideB.crossVectors(this.right, this.tangent).normalize();
 
                 const frac = i / (TRAIL_POINTS - 1);
-                const width = (1.18 * (1 - frac * 0.72) + 0.14) * this.lightBlend;
+                const width = (0.56 * (1 - frac * 0.78) + 0.08) * this.lightBlend;
 
                 for (let plane = 0; plane < 2; plane++) {
                     const axis = plane === 0 ? this.sideA : this.sideB;
@@ -1096,9 +1107,9 @@ export class VoidFlightEffects {
                 x: this.lightPos.x,
                 y: this.lightPos.y,
                 z: this.lightPos.z,
-                color: 0x8ce8ff,
-                intensity: 22 * this.lightBlend,
-                distance: 34,
+                color: 0x72dcf2,
+                intensity: 9.5 * this.lightBlend,
+                distance: 24,
                 priority: 3,
                 // The fast-moving trail only needs fill light. Avoid six shadow passes per frame.
                 castShadow: false,

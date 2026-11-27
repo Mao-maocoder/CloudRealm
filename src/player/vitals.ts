@@ -332,15 +332,29 @@ export class PlayerVitals {
         return true;
     }
 
-    /** Consumes mana for an active Divine Sense pulse scan. */
+    /** Consumes mana when opening Divine Sense (initial scan wave). */
     spendSensePulse(now: number): boolean {
         const cost = this.stats.sensePulseCost;
         if (this.mp < cost) {
-            this.announce(`灵力不足 · 神识外放需 ${cost} 灵力`, now, 2.0);
+            this.announce(`灵力不足 · 开启神识需 ${cost} 灵力`, now, 2.0);
             return false;
         }
         this.mp = Math.max(0, this.mp - cost);
         this.lastCastTime = now;
+        return true;
+    }
+
+    /** Continuously drains gentle mana while Divine Sense stays open; returns false when spirit runs out. */
+    drainSenseMana(dt: number, now: number): boolean {
+        const rate = this.stats.senseDrain;
+        if (rate <= 0) return true;
+        this.mp = Math.max(0, this.mp - rate * dt);
+        this.lastCastTime = now;
+        if (this.mp <= 0.5) {
+            this.mp = 0;
+            this.announce('灵力耗尽 · 神识自动收回', now, 2.6);
+            return false;
+        }
         return true;
     }
 

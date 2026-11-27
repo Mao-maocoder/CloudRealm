@@ -6,6 +6,9 @@ import { shoreDistanceAt } from '../world/geo/meadow-distribution';
 const {left,north,step,width,depth}=corridorField;
 export function makeCorridorTexture() {
     const data=new Uint8Array(width*depth*4);
+    // Initialize R channel to neutral 128 (dampness = 0) so border texels clamped beyond corridorField
+    // never decode as dampness = -1 (exposedGravel = 1), which caused a hard vertical seam at x = 1516!
+    for(let i=0;i<data.length;i+=4)data[i]=128;
     for(let z=1;z<depth-1;z++)for(let x=1;x<width-1;x++){
         const wx=left+x*step,wz=north+z*step;
         const habitat=corridorHabitatAt(wx,wz,heightAt(wx,wz),slopeAt(wx,wz),shoreDistanceAt(wx,wz));

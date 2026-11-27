@@ -3,8 +3,6 @@ import type { Quality } from '../config/settings';
 import { atmosphereUniforms } from '../rendering/aerial-perspective';
 
 const PULSE_DURATION = 2.35;
-const INSIGHT_DURATION = 11.0;
-const PULSE_COOLDOWN = 2.6;
 
 /**
  * Orchestrates the Divine Sense (神识) visual & state system:
@@ -23,8 +21,7 @@ export class DivineSense {
     pulseActive = false;
     pulseAge = 0;
     pulseMaxRadius = 120;
-    insightRemaining = 0;
-    cooldownRemaining = 0;
+    senseEnabled = false;
 
     astralActive = false;
     astralRadius = 350;
@@ -395,7 +392,7 @@ export class DivineSense {
     }
 
     get insightActive(): boolean {
-        return this.insightRemaining > 0 || this.astralActive;
+        return this.senseEnabled || this.astralActive;
     }
 
     get currentPulseRadius(): number {
@@ -405,18 +402,26 @@ export class DivineSense {
         return eased * this.pulseMaxRadius;
     }
 
-    /** Triggers a 3D expanding Divine Sense pulse wave and activates insight mode. */
-    triggerPulse(origin: T.Vector3, maxRadius: number, realmColor: string): boolean {
-        if (this.cooldownRemaining > 0) return false;
+    /** Manually opens Divine Sense (stays continuously active until closed or mana runs out) and fires an opening scan wave. */
+    openSense(origin: T.Vector3, maxRadius: number, realmColor: string): boolean {
+        this.senseEnabled = true;
         this.pulseOrigin.copy(origin);
         this.pulseMaxRadius = Math.max(40, maxRadius);
         this.pulseAge = 0;
         this.pulseActive = true;
         this.triggerRippleAge = 0;
-        this.insightRemaining = INSIGHT_DURATION;
-        this.cooldownRemaining = PULSE_COOLDOWN;
         this.themeColor.set(realmColor);
         return true;
+    }
+
+    /** Alias kept for compatibility. */
+    triggerPulse(origin: T.Vector3, maxRadius: number, realmColor: string): boolean {
+        return this.openSense(origin, maxRadius, realmColor);
+    }
+
+    /** Manually closes continuous Divine Sense perception (screen-edge veil fades out smoothly). */
+    closeSense() {
+        this.senseEnabled = false;
     }
 
     /** Brief crimson pulse along screen edge when a high-rank beast counter-senses the cultivator. */
@@ -427,6 +432,7 @@ export class DivineSense {
     /** Enters out-of-body Astral Divine Sense mode while the cultivator meditates in place. */
     enterAstral(bodyPos: T.Vector3, bodyHeading: number, radius: number, realmColor: string) {
         this.astralActive = true;
+        this.senseEnabled = true;
         this.bodyPosition.copy(bodyPos);
         this.bodyHeading = bodyHeading;
         this.astralRadius = Math.max(120, radius);
@@ -438,7 +444,6 @@ export class DivineSense {
         this.pulseAge = 0;
         this.pulseActive = true;
         this.triggerRippleAge = 0;
-        this.insightRemaining = Math.max(this.insightRemaining, INSIGHT_DURATION);
     }
 
     exitAstral() {
@@ -456,8 +461,7 @@ export class DivineSense {
         this.edgeBlend = 0;
         this.triggerRippleAge = 99;
         this.alertPulse = 0;
-        this.insightRemaining = 0;
-        this.cooldownRemaining = 0;
+        this.senseEnabled = false;
         this.exitAstral();
         this.edgeQuad.visible = false;
         this.lockReticle.visible = false;
@@ -477,10 +481,6 @@ export class DivineSense {
     ) {
         this.elapsed += dt;
         this.themeColor.set(realmColor);
-        if (this.cooldownRemaining > 0) this.cooldownRemaining = Math.max(0, this.cooldownRemaining - dt);
-        if (this.insightRemaining > 0 && !this.astralActive) {
-            this.insightRemaining = Math.max(0, this.insightRemaining - dt);
-        }
 
         // 1. Update global 3D shader scan wavefront & astral boundary uniforms
         let waveRadius = 0;
@@ -514,8 +514,8 @@ export class DivineSense {
         // 1b. Update Screen-Space Peripheral Psychic Perception Shader (creeping ink mist + flowing spirit silk + trigger ripple)
         const targetEdge = this.astralActive
             ? 1.0
-            : this.insightRemaining > 0
-                ? T.MathUtils.clamp(this.insightRemaining / 1.4, 0, 1) * 0.92
+            : this.senseEnabled
+                ? 0.92
                 : 0;
         const rate = targetEdge > this.edgeBlend ? 4.8 : 2.6;
         this.edgeBlend = T.MathUtils.damp(this.edgeBlend, targetEdge, rate, dt);

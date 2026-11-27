@@ -427,9 +427,14 @@ test('divine sense scales across realms, gates astral projection, suppresses low
   assert.equal(vitals.canStartAstral(1), false);
   assert.equal(vitals.spendSensePulse(1), true);
   assert.equal(vitals.mp, vitals.stats.maxMp - vitals.stats.sensePulseCost);
-  vitals.setRealm(2, 0, 2);
-  assert.equal(vitals.canStartAstral(2), true);
-  assert.equal(vitals.drainAstralMana(1, 3), true);
+  assert.ok(vitals.stats.senseDrain > 0);
+  // Continuous Divine Sense drains mana and auto-closes (returns false) once MP is exhausted
+  assert.equal(vitals.drainSenseMana(1, 2), true);
+  assert.equal(vitals.drainSenseMana(999, 3), false);
+  assert.equal(vitals.mp, 0);
+  vitals.setRealm(2, 0, 4);
+  assert.equal(vitals.canStartAstral(4), true);
+  assert.equal(vitals.drainAstralMana(1, 5), true);
 
   const ecology = new WildlifeSimulation(() => {}, { enableRanks: true });
   const habitat = habitats.find(h => h.id === 'valley-boars');
@@ -450,6 +455,70 @@ test('divine sense scales across realms, gates astral projection, suppresses low
   assert.ok(lowBeast.intimidatedUntil > ecology.time);
   assert.ok(highBeast.angerUntil > ecology.time);
   assert.ok(highBeast.senseMarkedUntil > ecology.time);
+});
+test('sword wave heavy attack releases while moving without locking movement', () => {
+  const {p, keys, pressed} = makePlayer();
+  const dummyAction = (duration = 0.5) => ({
+    time: 0,
+    paused: false,
+    reset() { this.time = 0; this.paused = false; return this; },
+    setEffectiveWeight() { return this; },
+    setEffectiveTimeScale(r) { this._rate = r; return this; },
+    setLoop() { return this; },
+    play() { return this; },
+    crossFadeFrom() { return this; },
+    fadeIn() { return this; },
+    fadeOut() { return this; },
+    stop() { return this; },
+    getClip() { return { duration }; },
+    _rate: 1,
+  });
+  const actions = new Map([
+    ['Idle', dummyAction(1)],
+    ['Walk', dummyAction(1)],
+    ['Run', dummyAction(1)],
+    ['Light_Draw', dummyAction(0.42)],
+    ['Attack_Slash', dummyAction(0.75)],
+    ['Sword_Ready', dummyAction(1)],
+    ['Sword_Walk', dummyAction(1)],
+    ['Sword_Run', dummyAction(1)],
+  ]);
+  const gaits = new Map([['Idle', dummyAction(1)], ['Walk', dummyAction(1)], ['Run', dummyAction(1)]]);
+  Object.assign(p.avatar, {
+    actions,
+    gaits,
+    mixer: {
+      update(dt) {
+        const a = p.avatar.action;
+        if (!a || a.paused) return;
+        a.time += dt * (a._rate ?? 1);
+        if (a.time >= a.getClip().duration) { a.time = a.getClip().duration; a.paused = true; }
+      },
+      stopAllAction() {},
+    },
+  });
+  let heavyReleased = 0;
+  p.onHeavyHit = () => { heavyReleased++; };
+  keys.add('KeyW');
+  keys.add('ShiftLeft');
+  for (let i = 0; i < 60; i++) p.step(1 / 60);
+  const speedBefore = Math.hypot(p.velocity.x, p.velocity.z);
+  assert.ok(speedBefore > 10.5);
+  pressed.add('AttackHeavy');
+  let minSpeedDuringCast = Infinity;
+  let sawHeavyAttack = false;
+  for (let i = 0; i < 90; i++) {
+    p.step(1 / 60);
+    assert.equal(p.avatar.movementLocked, false);
+    if (p.avatar.heavyAttacking) {
+      sawHeavyAttack = true;
+      minSpeedDuringCast = Math.min(minSpeedDuringCast, Math.hypot(p.velocity.x, p.velocity.z));
+    }
+  }
+  assert.equal(sawHeavyAttack, true);
+  assert.equal(heavyReleased, 1);
+  assert.ok(minSpeedDuringCast > 10.5, `expected full run speed during sword wave, got ${minSpeedDuringCast}`);
+  p.avatar.dispose();
 });
 await fs.writeFile(path.join(root,'output/tests/unit-results.json'),JSON.stringify({date:new Date().toISOString(),results},null,2));
 

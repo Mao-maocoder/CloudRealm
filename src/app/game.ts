@@ -23,9 +23,12 @@ import { Input } from '../player/input';
 import { PlayerVitals } from '../player/vitals';
 import { HUD } from '../ui/hud';
 import { TouchControls } from '../ui/touch-controls';
+import { mobileLayout } from '../ui/mobile-layout';
 import { welcome } from '../ui/welcome';
 import { WorldMap } from '../ui/world-map';
 import { BridgeGrove } from '../world/biomes/bridge-grove';
+import { BossTerritories } from '../world/biomes/boss-territories';
+import { bossTerritoryAt } from '../world/geo/boss-territories';
 import { bridgeReflectionLayer } from '../world/geo/bridge-look';
 import { buildingViewTarget } from '../world/biomes/building-layout';
 import { GeographyDebug } from '../world/terrain/debug';
@@ -46,6 +49,8 @@ function nextAnimationFrame(): Promise<void> {
 
 export class Game {
     private readonly device = detectDevice();
+    private readonly viewport = document.querySelector<HTMLElement>('#app')!;
+    private viewportObserver?: ResizeObserver;
     private readonly resolutionScaler = new AdaptiveResolutionScaler(this.device.isMobile ? 0.6 : 0.72);
     readonly roads = new RoadNetwork();
     readonly geographyDebug = new GeographyDebug();
@@ -63,6 +68,7 @@ export class Game {
     readonly terrain: Terrain;
     readonly atmosphere: Atmosphere;
     readonly bridgeGrove: BridgeGrove;
+    readonly bossTerritories: BossTerritories;
     readonly forestClearing: ForestClearing;
     readonly hud: HUD;
     readonly touchControls: TouchControls;
@@ -94,6 +100,7 @@ export class Game {
     private lastShownTier = 0;
     private nascentAssetsPromise?: Promise<void>;
     private senseCombatTarget?: ReturnType<Wildlife['combatTarget']>;
+    private senseSweepTimer = 0;
     private readonly inkAnchorWorld = new T.Vector3();
     private readonly inkCamRight = new T.Vector3();
     paused = false;
@@ -101,7 +108,7 @@ export class Game {
     frameMs = 0;
 
     private readonly itemKey = (e: KeyboardEvent) => {
-        if (!this.hud.started || this.worldMap.open || (e.target instanceof HTMLElement && e.target.matches('input,select,textarea'))) return;
+        if (mobileLayout.blocked || !this.hud.started || this.worldMap.open || (e.target instanceof HTMLElement && e.target.matches('input,select,textarea'))) return;
         if (e.code === 'Escape' && !e.repeat && this.nascentBreakthrough.active) {
             this.skipBreakthroughCeremony();
             return;
@@ -120,24 +127,32 @@ export class Game {
 
     private triggerDivineSensePulse() {
         if (this.nascentBreakthrough.active) return;
-        const stats = this.vitals.stats;
-        if (this.divineSense.cooldownRemaining > 0) {
-            this.vitals.announce(`神识回气中 · 请稍候 (${this.divineSense.cooldownRemaining.toFixed(1)}s)`, this.time, 1.4);
+        // Manual toggle: if Divine Sense is currently open, close it cleanly
+        if (this.divineSense.senseEnabled || this.divineSense.astralActive) {
+            if (this.divineSense.astralActive) {
+                this.exitAstralProjection();
+            }
+            this.divineSense.closeSense();
+            this.senseSweepTimer = 0;
+            this.vitals.announce('神识收回 · 灵觉内敛', this.time, 1.8);
+            this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             return;
         }
+        const stats = this.vitals.stats;
         if (!this.vitals.spendSensePulse(this.time)) {
             this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
             return;
         }
-        const origin = this.divineSense.astralActive ? this.camera.position : this.player.position;
-        this.divineSense.triggerPulse(origin, stats.senseRadius, stats.realmColor);
+        const origin = this.player.position;
+        this.divineSense.openSense(origin, stats.senseRadius, stats.realmColor);
+        this.senseSweepTimer = 0;
         const report = this.wildlife.applyDivineSensePulse(
             origin,
             stats.senseRadius,
             stats.realmIndex + 1,
             stats.senseSuppressMaxRank,
         );
-        const parts: string[] = [`${stats.senseStageName} · 探查 ${stats.senseRadius}m`];
+        const parts: string[] = [`${stats.senseStageName} · 神识已开 (${stats.senseRadius}m · 再按 Z 关闭)`];
         if (report.detected > 0) parts.push(`感应 ${report.detected} 头妖兽`);
         else parts.push('方圆清宁，未见妖迹');
         if (report.suppressedCount > 0) parts.push(`威压震慑 ${report.suppressedCount} 头低阶妖兽`);
@@ -211,6 +226,41 @@ export class Game {
         }
     }
 
+    /** Asynchronously compiles shader/material programs for a list of hidden pooled objects so first cast never hitches. */
+    private async warmSkillObjects(objects: T.Object3D[]) {
+        if (this.disposed || !objects.length) return;
+        const restore: { object: T.Object3D; visible: boolean; detached: boolean }[] = [];
+        for (const object of objects) {
+            const detached = !object.parent;
+            if (detached) this.scene.add(object);
+            if (!object.visible || detached) {
+                restore.push({ object, visible: object.visible, detached });
+                object.visible = true;
+            }
+        }
+        try {
+            if (typeof this.renderer.compileAsync === 'function') {
+                await this.renderer.compileAsync(this.scene, this.camera);
+            }
+        } catch (error) {
+            console.warn('Skill shader warmup skipped', error);
+        } finally {
+            for (const entry of restore) {
+                entry.object.visible = entry.visible;
+                if (entry.detached) entry.object.removeFromParent();
+            }
+        }
+    }
+
+    /** Asynchronously compiles Nascent Giant Sword & Void Flight shaders/materials in the background so first flight/cast never hitches. */
+    private async warmNascentShaders() {
+        await this.warmSkillObjects([
+            ...this.giantSword.nascentWarmObjects,
+            ...this.voidFlight.warmObjects,
+            ...this.fireball.warmObjects,
+        ]);
+    }
+
     /** Idempotent lazy loader for Nascent Soul flight/breakthrough clips, escape-light VFX, and Celestial Omen volumetric clouds. */
     private ensureNascentAssetsLoaded(): Promise<void> {
         if (this.nascentAssetsPromise) return this.nascentAssetsPromise;
@@ -222,7 +272,8 @@ export class Game {
                 .then(gltf => this.player.avatar.installBreakthroughClips(gltf)),
             this.voidFlight.load(),
             this.celestialOmen.load(),
-        ]).then(() => {}).catch(error => {
+            this.giantSword.loadNascent(),
+        ]).then(() => this.warmNascentShaders()).catch(error => {
             console.warn('元婴期扩展资源加载失败', error);
             this.nascentAssetsPromise = undefined;
         });
@@ -278,7 +329,7 @@ export class Game {
             powerPreference: 'high-performance',
             stencil: false,
         });
-        document.querySelector('#app')!.append(this.renderer.domElement);
+        this.viewport.append(this.renderer.domElement);
         this.renderer.toneMapping = T.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.1;
 
@@ -291,7 +342,7 @@ export class Game {
             this.scene,
             sampleSurfaceMaterial,
             (from, to) => this.wildlife.fireballContact(from, to),
-            (point, power, directHit) => this.wildlife.fireballBlast(point, power, directHit),
+            (point, power, directHit, radiusScale) => this.wildlife.fireballBlast(point, power, directHit, radiusScale),
         );
         this.giantSword = new GiantSword(
             this.scene,
@@ -341,8 +392,10 @@ export class Game {
         this.terrain = new Terrain(this.scene, this.quality);
         this.atmosphere = new Atmosphere(this.scene, this.quality);
         this.bridgeGrove = new BridgeGrove(this.atmosphere.sunDirection, this.terrain.vegetation.uniforms);
+        this.bossTerritories = new BossTerritories(this.scene);
         this.forestClearing = new ForestClearing(this.atmosphere.sunDirection, this.terrain.vegetation.uniforms);
         this.scene.add(this.bridgeGrove, this.forestClearing);
+        void this.bossTerritories.load();
         this.terrain.lod.mesh.layers.enable(bridgeReflectionLayer);
         this.scene.traverse(object => {
             if (object instanceof T.Light) object.layers.enable(bridgeReflectionLayer);
@@ -471,6 +524,10 @@ export class Game {
             () => this.triggerDivineSensePulse(),
             () => this.toggleAstralProjection(),
         );
+        this.touchControls.bindDivineSense(
+            () => this.triggerDivineSensePulse(),
+            () => this.toggleAstralProjection(),
+        );
         this.hud.updateVitals(this.vitals.snapshot(), '');
         this.hud.bindTimeControl(
             hours => this.atmosphere.dayNight.setHours(hours),
@@ -487,7 +544,14 @@ export class Game {
         this.geographyDebug.bind(this.terrain, this.roads);
         this.setQuality(this.quality);
         window.addEventListener('resize', this.resize);
+        window.addEventListener('orientationchange', this.onOrientationChange);
+        window.visualViewport?.addEventListener('resize', this.resize);
+        if (typeof ResizeObserver !== 'undefined') {
+            this.viewportObserver = new ResizeObserver(this.resize);
+            this.viewportObserver.observe(this.viewport);
+        }
         document.addEventListener('visibilitychange', this.visibility);
+        if (document.hidden) this.visibility();
         this.renderer.domElement.addEventListener('click', this.capture);
         this.renderer.domElement.addEventListener('webglcontextlost', this.contextLost);
 
@@ -504,17 +568,40 @@ export class Game {
             if (this.disposed) return;
             this.landmarksReady = true;
             welcome.advance();
-            if (this.characterReady) this.finishPreload();
+            if (this.characterReady) void this.finishPreload();
         }).catch(error => {
             console.error('云境远景生成失败', error);
             if (!this.disposed) welcome.fail('远景生成失败，请刷新页面');
         });
     }
 
-    /** Pre-compile scene & hidden effect shaders behind the welcome screen to prevent first-flight hitches. */
-    private finishPreload() {
+    /** Asynchronously pre-compile active startup shaders behind the welcome screen without freezing UI animation. */
+    private async finishPreload() {
         if (!this.shadersWarmed && !this.disposed) {
             this.shadersWarmed = true;
+            welcome.setStatus('正在预热着色器…');
+            await nextAnimationFrame();
+            if (this.disposed) return;
+
+            // Prepare camera & pre-warm the immediate spawn chunks + sky clouds behind the welcome screen
+            // so clicking Start lands in a fully built valley with zero post-click chunk or cloud-bake storm!
+            this.follow.update(1 / 60);
+            await this.terrain.prewarmSpawnAsync(
+                this.player.position,
+                this.camera,
+                nextAnimationFrame,
+                () => this.disposed,
+                this.device.isMobile ? 10 : 20,
+            );
+            if (this.disposed) return;
+            while (!this.atmosphere.sky.cloudsBaked && !this.disposed) {
+                this.atmosphere.sky.bake(this.renderer);
+                this.atmosphere.sky.bake(this.renderer);
+                await nextAnimationFrame();
+            }
+            if (this.disposed) return;
+            this.atmosphere.update(this.time, this.camera, this.player, 0);
+
             const restore: { object: T.Object3D; visible: boolean }[] = [];
             const reveal = (object?: T.Object3D) => {
                 if (!object || object.visible) return;
@@ -523,9 +610,6 @@ export class Game {
             };
             reveal(this.swordEffects.windMesh);
             reveal(this.flightAirflow.group);
-            for (const object of this.voidFlight.warmObjects) reveal(object);
-            for (const object of this.celestialOmen.warmObjects) reveal(object);
-            for (const object of this.nascentBreakthrough.warmObjects) reveal(object);
             for (const object of this.divineSense.warmObjects) reveal(object);
             for (const object of this.swordArray.warmObjects) reveal(object);
             let grassRevealed = false, flowerRevealed = false;
@@ -538,25 +622,36 @@ export class Game {
                 if (grassRevealed && flowerRevealed) break;
             }
             try {
-                this.renderer.compile(this.scene, this.camera);
+                if (typeof this.renderer.compileAsync === 'function') {
+                    await this.renderer.compileAsync(this.scene, this.camera);
+                } else {
+                    this.renderer.compile(this.scene, this.camera);
+                }
             } catch (error) {
                 console.warn('Shader pre-compile skipped', error);
             } finally {
                 for (const entry of restore) entry.object.visible = entry.visible;
             }
+            if (this.disposed) return;
+            await nextAnimationFrame();
+            if (this.disposed) return;
+            // Render one clean initial frame so tapping Start reveals the valley immediately with zero blank flash
+            this.meadow.update(this.time, this.camera, this.renderer.domElement.height);
+            this.renderer.render(this.scene, this.camera);
         }
         welcome.ready();
-        // Low-priority background prefetch on desktop after valley entry so first Nascent/Omen trigger has zero hitch
+        // Low-priority background prefetch of Nascent assets on desktop (async network + compileAsync, no synchronous region stalls!)
         if (!this.device.isMobile && !this.disposed) {
             const schedulePrefetch = () => {
-                if (!this.disposed) void this.ensureNascentAssetsLoaded();
+                if (this.disposed) return;
+                void this.ensureNascentAssetsLoaded();
             };
             window.setTimeout(() => {
                 if (this.disposed) return;
                 const ric = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback;
                 if (ric) ric(schedulePrefetch, { timeout: 4000 });
                 else schedulePrefetch();
-            }, 4500);
+            }, 3500);
         }
     }
 
@@ -575,6 +670,10 @@ export class Game {
                 if (!this.disposed) welcome.advance();
             })));
             if (this.disposed) return;
+            // Pre-compile all base hotbar skill shaders (small/nascent fireball, impact, seals, sword array, wind) behind the welcome screen
+            const baseWarm: T.Object3D[] = [...this.fireball.warmObjects];
+            if (this.swordEffects.windMesh) baseWarm.push(this.swordEffects.windMesh);
+            await this.warmSkillObjects(baseWarm);
             const sword = this.player.avatar.swordMotion;
             const tip = sword?.getObjectByName('SwordTip');
             if (!sword || !tip) throw new Error('Character.glb is missing SwordMotion or SwordTip');
@@ -582,7 +681,7 @@ export class Game {
             this.swordArray.attachSword(sword, tip);
             this.giantSword.attachSword(sword, tip);
             this.characterReady = true;
-            if (this.landmarksReady) this.finishPreload();
+            if (this.landmarksReady) void this.finishPreload();
             else welcome.setStatus('正在生成远景峰林与浮岛…');
 
             const view = new URLSearchParams(location.search).get('valleyView');
@@ -751,9 +850,10 @@ export class Game {
     };
 
     private readonly visibility = () => {
-        this.paused = document.hidden;
+        this.paused = document.hidden || mobileLayout.blocked;
         this.swordArray.setPaused(this.paused);
         this.input.clear();
+        if (this.paused) this.touchControls.setVisible(false);
         this.last = 0;
         this.accumulator = 0;
     };
@@ -765,10 +865,17 @@ export class Game {
     }
 
     private readonly resize = () => {
+        const width = Math.max(1, Math.round(this.viewport.clientWidth || window.visualViewport?.width || window.innerWidth));
+        const height = Math.max(1, Math.round(this.viewport.clientHeight || window.visualViewport?.height || window.innerHeight));
         this.applyPixelRatio();
-        this.renderer.setSize(innerWidth, innerHeight);
-        this.camera.aspect = innerWidth / innerHeight;
+        this.renderer.setSize(width, height, false);
+        this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
+    };
+
+    private readonly onOrientationChange = () => {
+        this.resize();
+        window.setTimeout(this.resize, 160);
     };
 
     setQuality(q: Quality) {
@@ -776,7 +883,7 @@ export class Game {
         this.resolutionScaler.reset();
         this.spellLights.setShadowSlots(this.device.isMobile || q === 'low' ? 0 : q === 'medium' ? 1 : 2);
         try { localStorage.setItem('yunjing-quality', q); } catch {}
-        this.renderer.shadowMap.type = this.device.isMobile || q === 'low' ? T.PCFShadowMap : T.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = this.device.isMobile || q !== 'high' ? T.PCFShadowMap : T.PCFSoftShadowMap;
         this.terrain.setQuality(q);
         this.meadow.setQuality(q);
         this.camera.far = qualities[q].far;
@@ -792,7 +899,10 @@ export class Game {
         const raw = this.last ? (stamp - this.last) / 1000 : 1 / 60;
         this.last = stamp;
         if (this.paused) return;
-        if (this.hud.started && this.input.take('KeyR')) {
+        // Never burn 100% GPU rendering the 3D valley at 60 FPS behind the opaque Welcome loading screen!
+        // This keeps the loading bar & spinner completely smooth and speeds up asset loading/parsing.
+        if (!this.hud.started) return;
+        if (this.input.take('KeyR')) {
             this.returnToValley();
         }
         if (this.hud.started && this.resolutionScaler.sample(raw)) {
@@ -818,6 +928,7 @@ export class Game {
             this.accumulator = 0;
             this.player.stepMeditate(dt, this.divineSense.bodyPosition, this.divineSense.bodyHeading, this.time);
             if (!this.vitals.drainAstralMana(dt, this.time)) {
+                this.divineSense.closeSense();
                 this.exitAstralProjection();
             }
         } else {
@@ -837,8 +948,8 @@ export class Game {
 
         const { avatar, heading } = this.player;
         const canInteract = this.hud.started && !this.follow.free && !this.divineSense.astralActive && !this.worldMap.open && !this.nascentBreakthrough.active;
-        this.touchControls.setVisible(canInteract);
-        this.touchControls.syncState(this.player.flying, this.player.boosting);
+        this.touchControls.setVisible(canInteract || (this.hud.started && this.divineSense.astralActive && !this.worldMap.open));
+        this.touchControls.syncState(this.player.flying, this.player.boosting, this.divineSense.insightActive, this.divineSense.astralActive);
 
         this.swordArray.updateCharge(dt, avatar.raisingSwordTime);
         this.swordArray.update(dt);
@@ -857,14 +968,21 @@ export class Game {
         } else {
             this.hud.setCinemaOverlay(false);
         }
+        const isNascent = this.vitals.realmIndex >= 3;
         this.fireball.update(dt);
-        this.fireball.updateSeals(avatar.fireballHead, avatar.fireballTime, heading, this.player.fireballPower);
+        this.fireball.updateSeals(avatar.fireballHead, avatar.fireballTime, heading, this.player.fireballPower, isNascent);
         if (this.fireballPower !== undefined) {
             this.vitals.spendFireballCharge(this.fireballPower, this.time);
-            this.fireball.release(this.camera, this.player.position, this.fireballPower);
+            this.fireball.release(
+                this.camera,
+                this.player.position,
+                this.fireballPower,
+                this.divineSense.insightActive ? this.senseCombatTarget : undefined,
+                isNascent,
+            );
             this.fireballPower = undefined;
         }
-        this.giantSword.updateCast(avatar.giantSwordTime, this.camera, this.player.position, heading, this.vitals.realmIndex >= 3,
+        this.giantSword.updateCast(avatar.giantSwordTime, this.camera, this.player.position, heading, isNascent,
             this.divineSense.insightActive ? this.senseCombatTarget : undefined);
         this.giantSword.update(dt);
         this.swordEffects.update(dt, this.player.boosting && this.player.avatar.riding && !this.player.voidFlying && canInteract);
@@ -892,10 +1010,13 @@ export class Game {
 
         const detachedCam = this.follow.free || this.divineSense.astralActive;
         const center = detachedCam ? this.camera.position : this.player.position;
+        const speedFlight = this.player.velocity.length();
+        const highSpeedFlight = this.player.escapeLight || (this.player.flying && speedFlight > 36);
         this.expansion.update(
             this.time, center, this.camera, this.player.velocity,
             this.renderer.domElement.clientHeight,
             this.quality === 'low' ? 1.65 : this.quality === 'medium' ? 1.22 : 1,
+            highSpeedFlight,
         );
         this.wildlife.update(
             dt, center, this.player.position, this.quality, this.hud.started, canInteract || this.divineSense.astralActive, this.camera,
@@ -903,6 +1024,7 @@ export class Game {
             detachedCam || this.player.flying,
             this.renderer.domElement.clientHeight,
             dn.nightFactor,
+            highSpeedFlight,
         );
         if (this.hud.started) {
             if (dn.nightFactor >= 0.45 && !this.nightAnnounced) {
@@ -913,7 +1035,30 @@ export class Game {
             }
         }
 
-        const activeSkill = avatar.casting || avatar.giantSwordCasting || avatar.fireballTime !== undefined || this.divineSense.astralActive;
+        // Continuous Divine Sense mana drain & silent periodic wildlife sweep while toggled on;
+        // automatically closes if the player forgets to turn it off and spirit runs out.
+        if (this.divineSense.senseEnabled && !inAstral && !inRitual) {
+            if (!this.vitals.drainSenseMana(dt, this.time)) {
+                this.divineSense.closeSense();
+                this.senseSweepTimer = 0;
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+            } else {
+                this.senseSweepTimer += dt;
+                if (this.senseSweepTimer >= 2.4) {
+                    this.senseSweepTimer = 0;
+                    const sStats = this.vitals.stats;
+                    const sweep = this.wildlife.applyDivineSensePulse(
+                        this.player.position,
+                        sStats.senseRadius,
+                        sStats.realmIndex + 1,
+                        sStats.senseSuppressMaxRank,
+                    );
+                    if (sweep.alertedHighCount > 0) this.divineSense.notifyCounterAlert();
+                }
+            }
+        }
+
+        const activeSkill = avatar.casting || avatar.giantSwordCasting || avatar.fireballTime !== undefined || this.divineSense.insightActive;
         const speedNow = this.player.velocity.length();
         const exerting = this.player.boosting || (this.player.grounded && speedNow > config.walkSpeed + .4);
         const calm = this.player.grounded && speedNow <= config.walkSpeed + .4 && !activeSkill;
@@ -960,6 +1105,7 @@ export class Game {
             : undefined;
 
         this.terrain.update(center, detachedCam ? this.zeroVelocity : this.player.velocity, this.camera);
+        this.bossTerritories.update(dt);
         this.geographyDebug.update();
         this.worldMap.update(avatar.position, senseOverlay.mapBlips, senseRing);
         this.celestialOmen.update(dt, center, this.renderer.getPixelRatio(), this.camera.position.y);
@@ -1051,14 +1197,15 @@ export class Game {
                     ? (speed > config.walkSpeed + .4 ? '持剑 · 奔跑' : '持剑 · 戒备')
                     : (speed > config.walkSpeed + .4 ? '奔跑' : '步行 · 循溪而行')) : '腾空';
             const pos = detachedCam ? this.camera.position : this.player.position;
+            const bossZone = bossTerritoryAt(pos.x, pos.z);
             const region = regionAt(pos.x, pos.z);
             this.hud.updateTelemetry({
                 x: pos.x,
                 y: pos.y,
                 z: pos.z,
                 heading: liveHeading,
-                regionName: region.name,
-                regionSub: region.id === 'village' ? 'CHANGFENG VALLEY' : region.subtitle.toUpperCase(),
+                regionName: bossZone ? bossZone.name : region.name,
+                regionSub: bossZone ? bossZone.subtitle : region.id === 'village' ? 'CHANGFENG VALLEY' : region.subtitle.toUpperCase(),
                 flying: this.player.flying,
                 boosting: this.player.boosting,
                 sprinting: this.player.grounded && speed > config.walkSpeed + .4,
@@ -1133,6 +1280,9 @@ export class Game {
         this.disposed = true;
         this.renderer.setAnimationLoop(null);
         window.removeEventListener('resize', this.resize);
+        window.removeEventListener('orientationchange', this.onOrientationChange);
+        window.visualViewport?.removeEventListener('resize', this.resize);
+        this.viewportObserver?.disconnect();
         window.removeEventListener('keydown', this.itemKey);
         document.removeEventListener('visibilitychange', this.visibility);
         this.renderer.domElement.removeEventListener('click', this.capture);
@@ -1145,6 +1295,7 @@ export class Game {
         this.surfaceWake.dispose();
         this.expansion.dispose();
         this.bridgeGrove.dispose();
+        this.bossTerritories.dispose();
         this.forestClearing.dispose();
         this.terrain.dispose();
         this.atmosphere.dispose();

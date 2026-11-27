@@ -3,18 +3,20 @@ import {fbm, smooth, valueNoise} from './height';
 // The sample includes the east bank, the village junction and the first row of houses.
 const sample = import.meta.env?.DEV && new URLSearchParams(location.search).get('valleyArt') === 'sample';
 export const valleyArtArea = sample ? [88, 180, 50, 50] : [165, 105, 720, 760];
-const feather = sample ? 12 : 175;
+const feather = sample ? 12 : 340;
 const [x, z, width, depth] = valleyArtArea;
 
 export function valleyArtAt(px: number, pz: number) {
-    const edge = Math.max(Math.abs(px-x)-width, Math.abs(pz-z)-depth);
-    return 1-smooth(-feather, 0, edge);
+    const warp = sample ? 0 : Math.sin(pz * 0.0045 + px * 0.0018) * 58 + Math.cos(px * 0.0038 - pz * 0.0029) * 42;
+    const edge = Math.max(Math.abs(px - x) - width, Math.abs(pz - z) - depth) + warp;
+    return 1 - smooth(-feather, 40, edge);
 }
 
 export const valleyArtGLSL = `
 float valleyArtAt(vec2 p) {
-    vec2 edge=abs(p-vec2(${x}.,${z}.))-vec2(${width}.,${depth}.);
-    return 1.-smoothstep(-${feather}.,0.,max(edge.x,edge.y));
+    float warp = ${sample ? '0.' : 'sin(p.y * 0.0045 + p.x * 0.0018) * 58. + cos(p.x * 0.0038 - p.y * 0.0029) * 42.'};
+    vec2 edge = abs(p - vec2(${x}., ${z}.)) - vec2(${width}., ${depth}.);
+    return 1. - smoothstep(-${feather}., 40., max(edge.x, edge.y) + warp);
 }
 `;
 

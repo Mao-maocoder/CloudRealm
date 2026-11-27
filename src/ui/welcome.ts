@@ -1,5 +1,6 @@
+import { mobileLayout } from './mobile-layout';
+
 const screen = document.querySelector<HTMLElement>('#welcome')!;
-const app = document.querySelector<HTMLElement>('#app')!;
 const button = screen.querySelector<HTMLButtonElement>('#start')!;
 const loading = screen.querySelector<HTMLElement>('.welcome-loading')!;
 const progress = screen.querySelector<HTMLProgressElement>('#welcome-progress')!;
@@ -21,11 +22,16 @@ export const welcome = {
         return !screen.hidden;
     },
     bind(onStart: () => void) {
-        button.onclick = onStart;
+        button.onclick = () => {
+            if (mobileLayout.isMobile && mobileLayout.isPortrait) {
+                void mobileLayout.requestLandscapeFullscreen(false);
+            }
+            onStart();
+        };
     },
     hide() {
         screen.hidden = true;
-        app.inert = false;
+        mobileLayout.sync();
     },
     setStatus(message: string) {
         if (screen.dataset.state === 'loading') status.textContent = message;

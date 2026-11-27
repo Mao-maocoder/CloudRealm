@@ -12,9 +12,18 @@ export class Input {
 
     private dragging = false;
     private attackStart?: number;
+    private attackHoldTimer?: number;
     private lookTouchId?: number;
     private lastTouchX = 0;
     private lastTouchY = 0;
+
+    private clearAttackHold() {
+        if (this.attackHoldTimer !== undefined) {
+            window.clearTimeout(this.attackHoldTimer);
+            this.attackHoldTimer = undefined;
+        }
+        this.attackStart = undefined;
+    }
 
     private readonly down = (e: KeyboardEvent) => {
         if (e.code === 'AltLeft' || e.code === 'AltRight') {
@@ -22,7 +31,7 @@ export class Input {
             for (const code of this.keys) if (code !== 'AltLeft' && code !== 'AltRight') this.keys.delete(code);
             this.pressed.clear();
             this.dragging = false;
-            this.attackStart = undefined;
+            this.clearAttackHold();
             this.keys.add(e.code);
             if (document.pointerLockElement === this.canvas) document.exitPointerLock();
             return;
@@ -43,7 +52,7 @@ export class Input {
         this.keys.clear();
         this.pressed.clear();
         this.dragging = false;
-        this.attackStart = undefined;
+        this.clearAttackHold();
         this.lookTouchId = undefined;
         this.moveX = 0;
         this.moveZ = 0;
@@ -58,24 +67,38 @@ export class Input {
     private readonly pointer = (e: MouseEvent) => {
         if (this.cursorFree || e.altKey) return;
         if (e.button === 2) this.dragging = true;
-        if (e.button === 0) this.attackStart = e.timeStamp;
+        if (e.button === 0) {
+            this.clearAttackHold();
+            this.attackStart = e.timeStamp;
+            this.attackHoldTimer = window.setTimeout(() => {
+                this.attackHoldTimer = undefined;
+                if (this.attackStart === undefined || this.cursorFree) return;
+                this.attackStart = undefined;
+                this.pressed.add('AttackHeavy');
+            }, 280);
+        }
     };
 
     private readonly release = (e: MouseEvent) => {
         if (e.button === 2) this.dragging = false;
         if (e.button !== 0 || this.attackStart === undefined) return;
+        const heldMs = e.timeStamp - this.attackStart;
+        this.clearAttackHold();
         if (!this.cursorFree && !e.altKey) {
-            this.pressed.add(e.timeStamp - this.attackStart >= 400 ? 'AttackHeavy' : 'AttackLight');
+            this.pressed.add(heldMs >= 280 ? 'AttackHeavy' : 'AttackLight');
         }
-        this.attackStart = undefined;
     };
 
     private readonly touchStart = (e: TouchEvent) => {
         if (this.lookTouchId !== undefined) return;
         for (let i = 0; i < e.changedTouches.length; i++) {
             const t = e.changedTouches[i];
-            // Reserve bottom-left quadrant for virtual joystick; allow camera drag everywhere else on canvas.
-            if (t.clientX < window.innerWidth * 0.42 && t.clientY > window.innerHeight * 0.45) continue;
+            const el = t.target instanceof HTMLElement ? t.target : null;
+            if (el && el.closest('.touch-stick-zone, .touch-btn, .skill-dock, .top-bar, .panel, .atlas, .mobile-rotate, button, input, select')) continue;
+            // Fallback bottom-left joystick guard when touching canvas directly under the joystick zone
+            const stickZoneW = Math.min(180, window.innerWidth * 0.42);
+            const stickZoneH = Math.min(180, window.innerHeight * 0.34);
+            if (t.clientX < stickZoneW && t.clientY > window.innerHeight - stickZoneH) continue;
             this.lookTouchId = t.identifier;
             this.lastTouchX = t.clientX;
             this.lastTouchY = t.clientY;
@@ -111,7 +134,7 @@ export class Input {
 
     private readonly lockChanged = () => {
         if (document.pointerLockElement === this.canvas) return;
-        this.attackStart = undefined;
+        this.clearAttackHold();
         this.pressed.delete('AttackLight');
         this.pressed.delete('AttackHeavy');
     };
@@ -172,6 +195,7 @@ export class Input {
     }
 
     dispose() {
+        this.clearAttackHold();
         window.removeEventListener('keydown', this.down);
         window.removeEventListener('keyup', this.up);
         window.removeEventListener('blur', this.blur);

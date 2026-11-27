@@ -176,6 +176,10 @@ export class Sky {
         this.mesh.position.copy(camera.position);
     }
 
+    get cloudsBaked() {
+        return this.cloudBake.done;
+    }
+
     bake(renderer: T.WebGLRenderer) {
         if (this.cloudBake.step(renderer)) this.uniforms.uCloudOn.value = 1;
     }

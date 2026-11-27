@@ -768,7 +768,7 @@ export class SwordArray {
                 intensity: 3.8 * this.currentOrbAlpha,
                 distance: 11,
                 priority: 72,
-                castShadow: true,
+                castShadow: false,
             });
         }
         // 2) Active Sword Array: soft cyan domain light over the battlefield + overhead array glow.
@@ -783,7 +783,7 @@ export class SwordArray {
                 intensity: (34 + 14 * this.currentBeamAlpha) * this.currentOpacity * pulse,
                 distance: 28,
                 priority: 95,
-                castShadow: true,
+                castShadow: false,
             });
             pool.emit({
                 x: p.x,

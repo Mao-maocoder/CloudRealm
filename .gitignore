@@ -4,3 +4,11 @@ output/
 release/
 *.local
 *.md
+
+.wrangler/
+# Raw source models (>25 MiB, exceed GitHub/Cloudflare limits; optimized versions live in resource/boss/)
+resource/batman.glb
+resource/boos.glb
+resource/dragon.glb
+resource/boss1_territory.glb
+resource/boss2_territory.glb

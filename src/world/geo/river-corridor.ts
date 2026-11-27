@@ -78,10 +78,15 @@ function beltAt(x:number,z:number,belts:ReturnType<typeof masks>) {
 
 export function corridorHabitatAt(x:number,z:number,height:number,slope:number,shoreDistance:number) {
     const {left,north,step,width,depth}=corridorField;
+    // Keep the noisy eastern fade strictly inside the texture's right boundary (x = 1520)
+    // so the DataTexture never hard-clamps a non-zero alpha into a straight vertical seam!
+    const eastNoise=(valueNoise(x*.0028,z*.0028,911)-.72)*240+(valueNoise(x*.0075,z*.0075,919)-.5)*70;
+    const eastEdge=(left+(width-1)*step-24)-x+eastNoise;
     const edge=Math.min(x-left,z-north,left+(width-1)*step-x,north+(depth-1)*step-z);
-    if(edge<=0)return {strength:0,woodland:0,wet:0,sediment:0,pasture:0};
+    if(edge<=0||eastEdge<=0)return {strength:0,woodland:0,wet:0,sediment:0,pasture:0};
     const alpine=(1-smooth(-920,-730,z))*(1-smooth(505,665,height));
-    const strength=smooth(0,185,edge)*Math.max(.88*alpine,1-smooth(290,480,height));
+    const eastFade=smooth(0,440,eastEdge);
+    const strength=smooth(0,185,edge)*eastFade*Math.max(.88*alpine,1-smooth(290,480,height));
     if(strength<=0)return {strength:0,woodland:0,wet:0,sediment:0,pasture:0};
     const broad=valueNoise(x*.0041,z*.0041,117), variation=valueNoise(x*.013,z*.013,419);
     const warpX=x+(broad-.5)*52, warpZ=z+(variation-.5)*55;

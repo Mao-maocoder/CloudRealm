@@ -2,6 +2,7 @@ import * as T from 'three';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { fireballRaiseTime, fireballReleaseTime } from '../player/avatar';
 import { FireballImpact } from './fireball-impact';
+import { NascentFireball } from './nascent-fireball';
 import { fireballAim, fireballArc, fireballGravity, traceFireballWorld, type SampleGround } from './fireball-trajectory';
 import type { SpellLightPool } from './spell-lights';
 
@@ -10,14 +11,24 @@ const modelUrl = new URL('../../resource/fireball/Flying_Fireball_3D.glb', impor
 const emberCount = 24;
 const up = new T.Vector3(0, 1, 0);
 
+export interface FireballLockTarget {
+    state: string;
+    position: T.Vector3;
+    profile: { height: number };
+}
+
 interface Projectile {
     object: T.Group;
     mixer: T.AnimationMixer;
+    action: T.AnimationAction;
     embers: T.InstancedMesh;
     velocity: T.Vector3;
     duration: number;
     power: number;
     age: number;
+    inUse: boolean;
+    homing?: FireballLockTarget;
+    homingSpeed?: number;
 }
 
 function tuneFlameModel(model: GLTF, time: { value: number }) {
@@ -32,6 +43,7 @@ function tuneFlameModel(model: GLTF, time: { value: number }) {
                 // Incandescent white-gold plasma core with molten orange-crimson cracks.
                 material.color.set('#ff9933');
                 material.toneMapped = false;
+                material.customProgramCacheKey = () => 'fireball-core-v1';
                 material.onBeforeCompile = shader => {
                     shader.uniforms.fireballTime = time;
                     shader.vertexShader = `varying vec3 fireballPosition;\n` + shader.vertexShader.replace(
@@ -145,7 +157,7 @@ function makeCometTailGeometry() {
 }
 
 function makeCometTailMaterial(time: { value: number }) {
-    return new T.ShaderMaterial({
+    const mat = new T.ShaderMaterial({
         transparent: true,
         depthWrite: false,
         toneMapped: false,
@@ -180,10 +192,12 @@ function makeCometTailMaterial(time: { value: number }) {
                 #include <colorspace_fragment>
             }`,
     });
+    mat.customProgramCacheKey = () => 'fireball-tail-v1';
+    return mat;
 }
 
 function makeFireHaloMaterial() {
-    return new T.ShaderMaterial({
+    const mat = new T.ShaderMaterial({
         transparent: true,
         depthWrite: false,
         toneMapped: false,
@@ -207,6 +221,8 @@ function makeFireHaloMaterial() {
                 #include <colorspace_fragment>
             }`,
     });
+    mat.customProgramCacheKey = () => 'fireball-halo-v1';
+    return mat;
 }
 
 export class Fireball {
@@ -227,22 +243,38 @@ export class Fireball {
     private readonly flameTime = { value: 0 };
     private readonly tailMaterial = makeCometTailMaterial(this.flameTime);
     private readonly sealPower = { value: 0 };
-    private readonly projectiles = new Set<Projectile>();
+    private readonly projectilePool: Projectile[] = [];
     private readonly next = new T.Vector3();
+    private readonly steerTo = new T.Vector3();
+    private readonly steerDir = new T.Vector3();
+    private readonly curDir = new T.Vector3();
     private readonly impact: FireballImpact;
+    private readonly nascent: NascentFireball;
     readonly grassScorches;
     private model?: GLTF;
     private loop?: T.AnimationClip;
     private disposed = false;
 
+    get warmObjects(): T.Object3D[] {
+        const list: T.Object3D[] = [
+            ...this.nascent.warmObjects,
+            ...this.impact.warmObjects,
+            this.seals[0].mesh,
+        ];
+        if (this.projectilePool.length > 0) list.push(this.projectilePool[0].object);
+        return list;
+    }
+
     constructor(
         private scene: T.Scene,
         private sampleGround: SampleGround,
         private traceCreature: (from: T.Vector3, to: T.Vector3) => number | undefined,
-        private blast: (point: T.Vector3, power: number, directHit: boolean) => void,
+        private blast: (point: T.Vector3, power: number, directHit: boolean, radiusScale?: number) => void,
     ) {
         this.impact = new FireballImpact(scene, sampleGround);
+        this.nascent = new NascentFireball(scene, sampleGround, traceCreature, blast, this.impact);
         this.grassScorches = this.impact.grassScorches;
+        this.sealMaterial.customProgramCacheKey = () => 'fireball-seal-v1';
         this.sealMaterial.onBeforeCompile = shader => {
             shader.uniforms.sealClock = this.flameTime;
             shader.uniforms.sealPower = this.sealPower;
@@ -289,11 +321,53 @@ export class Fireball {
                 tuneFlameModel(model, this.flameTime);
                 this.model = model;
                 this.loop = clip;
+                // Pre-allocate 4 pooled small fireballs so casting never clones GLTFs or allocates InstancedMeshes mid-frame
+                for (let i = 0; i < 4; i++) {
+                    const object = new T.Group();
+                    object.name = `Flying Fireball ${i}`;
+                    object.visible = false;
+                    const flame = model.scene.clone();
+                    flame.scale.set(.78, .78, 1.48);
+                    const tail = new T.Mesh(this.tailGeometry, this.tailMaterial);
+                    tail.name = 'Fireball Comet Tail';
+                    tail.renderOrder = 4;
+                    const halo = new T.Mesh(this.haloGeometry, this.haloMaterial);
+                    halo.name = 'Fireball Glow Halo';
+                    halo.renderOrder = 5;
+                    const embers = new T.InstancedMesh(this.emberGeometry, this.emberMaterial, emberCount);
+                    embers.name = 'Trailing Embers';
+                    embers.instanceMatrix.setUsage(T.DynamicDrawUsage);
+                    embers.frustumCulled = false;
+                    embers.renderOrder = 5;
+                    object.add(flame, tail, halo, embers);
+                    const mixer = new T.AnimationMixer(flame);
+                    const action = mixer.clipAction(clip);
+                    action.play();
+                    mixer.update(0);
+                    this.scene.add(object);
+                    this.projectilePool.push({
+                        object,
+                        mixer,
+                        action,
+                        embers,
+                        velocity: new T.Vector3(),
+                        duration: 2,
+                        power: 0.5,
+                        age: 0,
+                        inUse: false,
+                    });
+                }
             }),
         ]);
     }
 
-    updateSeals(head: T.Object3D | undefined, time: number | undefined, heading: number, power: number) {
+    updateSeals(head: T.Object3D | undefined, time: number | undefined, heading: number, power: number, nascent = false) {
+        if (nascent) {
+            for (const { mesh } of this.seals) mesh.visible = false;
+            this.nascent.updateCharge(head, time, power);
+            return;
+        }
+        this.nascent.updateCharge(undefined, undefined, 0);
         if (!head || time === undefined || time <= fireballRaiseTime || time >= 1.08 || !this.sealMaterial.map) {
             for (const { mesh } of this.seals) mesh.visible = false;
             return;
@@ -317,10 +391,17 @@ export class Fireball {
         }
     }
 
-    release(camera: T.Camera, caster: T.Vector3, power: number) {
-        const aim = fireballAim(camera, caster, power, this.sampleGround);
+    release(camera: T.Camera, caster: T.Vector3, power: number, lockedTarget?: FireballLockTarget, nascent = false) {
+        if (nascent) {
+            this.nascent.release(camera, caster, power, lockedTarget);
+            return;
+        }
+        const homing = lockedTarget && lockedTarget.state !== 'Dead' ? lockedTarget : undefined;
+        const aim = homing
+            ? new T.Vector3(homing.position.x, homing.position.y + homing.profile.height * 0.52, homing.position.z)
+            : fireballAim(camera, caster, power, this.sampleGround);
         const landing = this.sampleGround(aim.x, aim.z, aim.y + .3);
-        const onGround = Math.abs(aim.y - landing.height) < .08;
+        const onGround = !homing && Math.abs(aim.y - landing.height) < .08;
         const right = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
         right.y = 0;
         right.normalize();
@@ -331,39 +412,47 @@ export class Fireball {
                 target.addScaledVector(right, side * .56);
                 target.y = this.sampleGround(target.x, target.z, aim.y + .48).height - .04;
             }
-            this.launch(mesh.position, target, power);
+            this.launch(mesh.position, target, power, homing, homing ? right.clone().multiplyScalar(side * 6.5) : undefined);
         }
     }
 
-    private launch(origin: T.Vector3, target: T.Vector3, power: number) {
-        if (!this.model || !this.loop) return;
-        const object = new T.Group();
-        object.name = 'Flying Fireball';
-        const flame = this.model.scene.clone();
-        flame.scale.set(.78, .78, 1.48);
-        const tail = new T.Mesh(this.tailGeometry, this.tailMaterial);
-        tail.name = 'Fireball Comet Tail';
-        tail.renderOrder = 4;
-        const halo = new T.Mesh(this.haloGeometry, this.haloMaterial);
-        halo.name = 'Fireball Glow Halo';
-        halo.renderOrder = 5;
-        const embers = new T.InstancedMesh(this.emberGeometry, this.emberMaterial, emberCount);
-        embers.name = 'Trailing Embers';
-        embers.instanceMatrix.setUsage(T.DynamicDrawUsage);
-        embers.frustumCulled = false;
-        embers.renderOrder = 5;
-        object.add(flame, tail, halo, embers);
-        object.position.copy(origin);
-        const { velocity, duration } = fireballArc(origin, target, power);
+    private launch(origin: T.Vector3, target: T.Vector3, power: number, homing?: FireballLockTarget, fanVelocity?: T.Vector3) {
+        if (!this.projectilePool.length) return;
+        let shot = this.projectilePool.find(p => !p.inUse);
+        if (!shot) shot = this.projectilePool[0];
+        shot.object.position.copy(origin);
+        let velocity: T.Vector3;
+        let duration: number;
+        let homingSpeed: number | undefined;
+        if (homing) {
+            // Spirit-guided homing fireball: fans out gracefully from the twin seals then curves directly into the locked beast
+            homingSpeed = T.MathUtils.lerp(36, 48, power);
+            const dist = origin.distanceTo(target);
+            velocity = target.clone().sub(origin).normalize().multiplyScalar(homingSpeed);
+            if (fanVelocity) {
+                velocity.add(fanVelocity);
+                velocity.y += 3.2;
+                velocity.normalize().multiplyScalar(homingSpeed);
+            }
+            duration = Math.max(2.6, dist / homingSpeed + 2.2);
+        } else {
+            const arc = fireballArc(origin, target, power);
+            velocity = arc.velocity;
+            duration = arc.duration;
+        }
         // The supplied model has its flame core at the origin and its wake along -Z.
-        object.lookAt(this.next.copy(origin).add(velocity));
-        const mixer = new T.AnimationMixer(flame);
-        mixer.clipAction(this.loop).play();
-        mixer.update(0);
-        const shot = { object, mixer, embers, velocity, duration, power, age: 0 };
+        shot.velocity.copy(velocity);
+        shot.duration = duration;
+        shot.power = power;
+        shot.age = 0;
+        shot.homing = homing;
+        shot.homingSpeed = homingSpeed;
+        shot.inUse = true;
+        shot.object.lookAt(this.next.copy(origin).add(velocity));
+        shot.action.reset().play();
+        shot.mixer.update(0);
+        shot.object.visible = true;
         this.updateEmbers(shot);
-        this.scene.add(object);
-        this.projectiles.add(shot);
     }
 
     private updateEmbers({ embers, age }: Projectile) {
@@ -389,10 +478,35 @@ export class Fireball {
     update(dt: number) {
         this.flameTime.value += dt;
         this.impact.update(dt);
-        for (const shot of this.projectiles) {
+        this.nascent.update(dt);
+        for (const shot of this.projectilePool) {
+            if (!shot.inUse) continue;
             const step = Math.min(dt, shot.duration + .55 - shot.age);
             const from = shot.object.position;
-            const next = this.next.copy(from).addScaledVector(shot.velocity, step).addScaledVector(up, -.5 * fireballGravity * step * step);
+            const activeHoming = shot.homing && shot.homing.state !== 'Dead' ? shot.homing : undefined;
+            if (!activeHoming) shot.homing = undefined;
+
+            if (activeHoming && shot.homingSpeed) {
+                this.steerTo.set(
+                    activeHoming.position.x,
+                    activeHoming.position.y + activeHoming.profile.height * 0.52,
+                    activeHoming.position.z,
+                );
+                this.steerDir.subVectors(this.steerTo, from);
+                const dist = this.steerDir.length();
+                if (dist > 0.05) {
+                    this.steerDir.multiplyScalar(1 / dist);
+                    this.curDir.copy(shot.velocity).normalize();
+                    // Stronger close-range convergence so fast/fleeing beasts cannot outrun Divine Sense lock
+                    const turn = dist < 14 ? 13.5 : 7.8;
+                    const blend = 1 - Math.exp(-turn * step);
+                    this.curDir.lerp(this.steerDir, blend).normalize();
+                    shot.velocity.copy(this.curDir).multiplyScalar(shot.homingSpeed);
+                }
+            }
+
+            const gravityTerm = activeHoming ? 0 : -.5 * fireballGravity * step * step;
+            const next = this.next.copy(from).addScaledVector(shot.velocity, step).addScaledVector(up, gravityTerm);
             const world = traceFireballWorld(from, next, this.sampleGround, .13);
             const creature = this.traceCreature(from, next);
             const contact = Math.min(world?.t ?? Infinity, creature ?? Infinity);
@@ -410,7 +524,7 @@ export class Fireball {
                 continue;
             }
             from.copy(next);
-            shot.velocity.y -= fireballGravity * step;
+            if (!activeHoming) shot.velocity.y -= fireballGravity * step;
             shot.object.lookAt(this.next.copy(from).add(shot.velocity));
             shot.mixer.update(step);
             shot.age += step;
@@ -420,14 +534,13 @@ export class Fireball {
     }
 
     private remove(shot: Projectile) {
-        shot.mixer.stopAllAction();
-        shot.mixer.uncacheRoot(shot.mixer.getRoot());
-        shot.embers.dispose();
-        shot.object.removeFromParent();
-        this.projectiles.delete(shot);
+        shot.inUse = false;
+        shot.homing = undefined;
+        shot.object.visible = false;
     }
 
     collectLights(pool: SpellLightPool) {
+        this.nascent.collectLights(pool);
         const t = this.flameTime.value;
         // 1) Fireball rune seals flanking the caster while charging/casting.
         const sealOpacity = this.sealMaterial.opacity;
@@ -443,11 +556,12 @@ export class Fireball {
                 intensity: (1.5 + 1.3 * energy) * sealOpacity * flicker,
                 distance: 10,
                 priority: side < 0 ? 68 : 64,
-                castShadow: side < 0,
+                castShadow: false,
             });
         }
-        // 2) Flying fireballs arcing through the air with moving shadows.
-        for (const shot of this.projectiles) {
+        // 2) Flying fireballs arcing through the air (shadow-free for smooth frame pacing).
+        for (const shot of this.projectilePool) {
+            if (!shot.inUse) continue;
             const p = shot.object.position;
             const flicker = 0.90 + 0.10 * Math.sin(t * 34 + shot.age * 11);
             pool.emit({
@@ -458,7 +572,7 @@ export class Fireball {
                 intensity: (6.5 + 3.5 * shot.power) * flicker,
                 distance: 16,
                 priority: 90,
-                castShadow: true,
+                castShadow: false,
             });
         }
         // 3) Fireball explosions & lingering ground embers.
@@ -466,8 +580,9 @@ export class Fireball {
     }
 
     clear() {
+        this.nascent.clear();
         for (const { mesh } of this.seals) mesh.visible = false;
-        for (const shot of this.projectiles) this.remove(shot);
+        for (const shot of this.projectilePool) this.remove(shot);
         this.impact.clear();
     }
 
@@ -475,6 +590,13 @@ export class Fireball {
         this.disposed = true;
         this.clear();
         for (const { mesh } of this.seals) mesh.removeFromParent();
+        for (const shot of this.projectilePool) {
+            shot.mixer.stopAllAction();
+            shot.mixer.uncacheRoot(shot.mixer.getRoot());
+            shot.embers.dispose();
+            shot.object.removeFromParent();
+        }
+        this.projectilePool.length = 0;
         this.sealGeometry.dispose();
         this.sealMaterial.map?.dispose();
         this.sealMaterial.dispose();
@@ -485,6 +607,7 @@ export class Fireball {
         this.haloGeometry.dispose();
         this.haloMaterial.dispose();
         this.impact.dispose();
+        this.nascent.dispose();
         if (this.model) disposeModel(this.model);
     }
 }

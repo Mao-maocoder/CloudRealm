@@ -106,7 +106,8 @@ export class FollowCamera {
             this.camera.position.lerp(this.astralPosition, alpha);
             this.camera.up.set(0, 1, 0);
             this.camera.lookAt(this.look.copy(this.camera.position).add(direction));
-            const nextFov = T.MathUtils.damp(this.camera.fov, 74, 4.5, dt);
+            const portraitBoost = this.camera.aspect < 1 ? T.MathUtils.clamp((1 - this.camera.aspect) * 32, 0, 20) : 0;
+            const nextFov = T.MathUtils.damp(this.camera.fov, Math.min(88, 74 + portraitBoost), 4.5, dt);
             if (Math.abs(nextFov - this.camera.fov) > 0.005) {
                 this.camera.fov = nextFov;
                 this.camera.updateProjectionMatrix();
@@ -175,7 +176,10 @@ export class FollowCamera {
         this.camera.up.set(this.roll ? this.player.avatar.rotation.z * .09 : 0, 1, 0).normalize();
         this.camera.lookAt(this.target);
         const focusFovOffset = senseInsight ? -3.2 : 0;
-        const nextFov = T.MathUtils.damp(this.camera.fov, 65 + focusFovOffset + Math.min(17, speed / 65 * 17), 4, dt);
+        // Portrait phones (aspect < 1) need wider vertical FOV so horizontal sight doesn't collapse into a keyhole.
+        const portraitBoost = this.camera.aspect < 1 ? T.MathUtils.clamp((1 - this.camera.aspect) * 34, 0, 22) : 0;
+        const targetFov = Math.min(88, 65 + portraitBoost + focusFovOffset + Math.min(17, speed / 65 * 17));
+        const nextFov = T.MathUtils.damp(this.camera.fov, targetFov, 4, dt);
         if (Math.abs(nextFov - this.camera.fov) > 0.005) {
             this.camera.fov = nextFov;
             this.camera.updateProjectionMatrix();

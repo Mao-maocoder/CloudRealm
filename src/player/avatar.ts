@@ -464,8 +464,9 @@ export class Avatar extends T.Group {
     get giantSwordTime() { return this.motion === 'Skill_GiantSword' ? this.action?.time : undefined; }
     get raisingSwordTime() { return this.motion === 'Skill_RaiseSword' ? this.action?.time : undefined; }
     get fireballTime() { return this.motion === 'Fireball_Cast' ? this.action!.time : undefined; }
-    get lightAttacking() { return this.motion === 'Light_Draw' || this.motion === 'Light_Slash'; }
-    get heavyAttacking() { return this.motion === 'Attack_Slash'; }
+    get lightAttacking() { return this.motion === 'Light_Slash' || (this.motion === 'Light_Draw' && this.attack === 'light'); }
+    get heavyAttacking() { return this.motion === 'Attack_Slash' || (this.motion === 'Light_Draw' && this.attack === 'heavy'); }
+    get heavyQueued() { return this.queuedAttack === 'heavy'; }
     get movementLocked() { return this.casting || this.giantSwordCasting || this.fireballTime !== undefined || this.queuedSkill || this.motion === 'Sword_Draw'; }
     get actionLocked() { return this.movementLocked || this.lightAttacking || this.heavyAttacking; }
 
@@ -603,7 +604,7 @@ export class Avatar extends T.Group {
 
     private slash(attack: Attack) {
         this.attack = attack;
-        this.play(attack === 'heavy' ? 'Attack_Slash' : 'Light_Slash', .08, attack === 'heavy' ? .85 : 1.3);
+        this.play(attack === 'heavy' ? 'Attack_Slash' : 'Light_Slash', .08, attack === 'heavy' ? 1.15 : 1.3);
     }
 
     private raiseSword(holdingSword: boolean) {
@@ -753,7 +754,7 @@ export class Avatar extends T.Group {
         if (this.queuedAttack) {
             this.attack = this.queuedAttack;
             this.queuedAttack = undefined;
-            this.play(this.attack === 'heavy' ? 'Sword_Draw' : 'Light_Draw', .1, this.attack === 'heavy' ? 1.5 : 2.25);
+            this.play('Light_Draw', .08, this.attack === 'heavy' ? 2.1 : 2.25);
             return;
         }
         if (this.motion === 'Jump_Land' && !finished) return;

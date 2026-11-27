@@ -393,7 +393,7 @@ export class Wildlife {
     }
 
     update(dt: number, center: T.Vector3, player: T.Vector3, quality: Quality, running: boolean, canInteract: boolean,
-        camera: T.PerspectiveCamera, velocity?:T.Vector3, flying=false, viewportHeight=900, nightFactor = 0) {
+        camera: T.PerspectiveCamera, velocity?:T.Vector3, flying=false, viewportHeight=900, nightFactor = 0, highSpeedFlight = false) {
         camera.updateMatrixWorld();
         const visible=(position:T.Vector3,height:number)=>running&&this.inView(camera,position,height);
         const nightBoost = 1 + 0.55 * Math.max(0, Math.min(1, nightFactor));
@@ -414,6 +414,8 @@ export class Wildlife {
             if (!asset) { this.load(id); continue; }
             let view = this.views.get(agent);
             if (!view) {
+                // Skip expensive SkeletonUtils.clone + CanvasTexture allocation while rocketing overhead in Escape Light
+                if (highSpeedFlight) continue;
                 if (running && spawned >= 1) continue;
                 // Far, already-authored residents are loaded before they are large enough to notice.
                 const focal=viewportHeight/(2*Math.tan(camera.fov*Math.PI/360));
@@ -699,9 +701,9 @@ export class Wildlife {
         return contact;
     }
 
-    fireballBlast(point: T.Vector3, power = .5, directHit = false) {
+    fireballBlast(point: T.Vector3, power = .5, directHit = false, radiusScale = 1) {
         const charge = T.MathUtils.clamp(power, 0, 1);
-        const splashRadius = T.MathUtils.lerp(3.6, 5.6, charge);
+        const splashRadius = T.MathUtils.lerp(3.6, 5.6, charge) * radiusScale;
         const directDamage = Math.round(T.MathUtils.lerp(24, 58, charge));
         const splashMax = Math.round(T.MathUtils.lerp(15, 34, charge));
         const splashMin = Math.round(T.MathUtils.lerp(6, 14, charge));
@@ -711,14 +713,16 @@ export class Wildlife {
             for (const creature of this.simulation.active) {
                 if (!creature.ready || creature.health <= 0) continue;
                 const d = Math.max(0, Math.hypot(creature.position.x - point.x, creature.position.z - point.z) - creature.profile.radius);
-                if (d < nearest && d <= .85) { nearest = d; directTarget = creature; }
+                if (d < nearest && d <= .85 * radiusScale) { nearest = d; directTarget = creature; }
             }
         }
+        const yUp = 1.8 * radiusScale;
+        const yDown = 1.3 * Math.min(2.2, radiusScale);
         for (const creature of this.simulation.active) {
             if (!creature.ready || creature.health <= 0) continue;
             const { position, profile } = creature;
             const distance = Math.max(0, Math.hypot(position.x - point.x, position.z - point.z) - profile.radius);
-            if (creature !== directTarget && (distance > splashRadius || point.y < position.y - 1.3 || point.y > position.y + profile.height + 1.8)) continue;
+            if (creature !== directTarget && (distance > splashRadius || point.y < position.y - yDown || point.y > position.y + profile.height + yUp)) continue;
             this.hitPoint.copy(point).y += .16;
             this.hitTarget.copy(position).y += profile.height * .48;
             if (creature !== directTarget && clipStructureCamera(this.hitPoint, this.hitTarget) !== 1) continue;

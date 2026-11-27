@@ -56,6 +56,9 @@ export class TerrainLOD{
  readonly mesh:T.Mesh<T.InstancedBufferGeometry,T.MeshLambertMaterial>;
  readonly uniforms={uLodCamera:{value:new T.Vector3()},uLodRange:{value:LOD_RANGE},uLodAltitude:{value:0}};
  nodes:TerrainNode[]=[];
+ private readonly nodePools:[TerrainNode[],TerrainNode[],TerrainNode[]]=[[],[],[]];
+ private readonly outBuffers:[TerrainNode[],TerrainNode[],TerrainNode[]]=[[],[],[]];
+ private poolIndex=0;
  private attr:T.InstancedBufferAttribute;
  private readonly extrema=terrainBounds();
  private readonly frustum=new T.Frustum();
@@ -102,13 +105,35 @@ export class TerrainLOD{
   const camera=this.uniforms.uLodCamera.value.setFromMatrixPosition(view.matrixWorld);
   const altitude=Math.max(0,camera.y-heightAt(camera.x,camera.z)-60)*.7;
   this.uniforms.uLodRange.value=range;this.uniforms.uLodAltitude.value=altitude;
-  this.nodes=selectTerrainNodes(camera.x,camera.z,altitude,range,this.visible);
-  if(this.nodes.length>this.attr.count)throw new Error('Terrain LOD instance capacity exceeded');
-  this.nodes.forEach((n,i)=>this.attr.setXYZW(i,n.x,n.z,n.size,n.level));
-  this.mesh.geometry.instanceCount=this.nodes.length;
-  if(this.nodes.length){
+  // Zero-GC triple-buffered quadtree traversal so consecutive callers holding `lod.nodes` snapshots never alias
+  const slot=this.poolIndex=(this.poolIndex+1)%3;
+  const pool=this.nodePools[slot],out=this.outBuffers[slot];
+  let count=0;
+  const visit=(nx:number,nz:number,size:number,level:number)=>{
+   if(!this.visible(nx,nz,size,level))return;
+   const dx=Math.max(nx-camera.x,0,camera.x-nx-size),dz=Math.max(nz-camera.z,0,camera.z-nz-size);
+   if(level>0&&Math.hypot(dx,dz,altitude)<range*2**(level-1)){
+    const half=size/2;
+    visit(nx,nz,half,level-1);visit(nx+half,nz,half,level-1);
+    visit(nx,nz+half,half,level-1);visit(nx+half,nz+half,half,level-1);
+   }else{
+    let n=pool[count];
+    if(!n){n={x:nx,z:nz,size,level};pool[count]=n;}
+    else{n.x=nx;n.z=nz;n.size=size;n.level=level;}
+    out[count]=n;
+    count++;
+   }
+  };
+  visit(bounds.left,bounds.north,4096,7);
+  for(let z=bounds.north;z<bounds.south;z+=2048)visit(bounds.left+4096,z,2048,6);
+  out.length=count;
+  this.nodes=out;
+  if(count>this.attr.count)throw new Error('Terrain LOD instance capacity exceeded');
+  for(let i=0;i<count;i++){const n=out[i];this.attr.setXYZW(i,n.x,n.z,n.size,n.level);}
+  this.mesh.geometry.instanceCount=count;
+  if(count){
    this.attr.clearUpdateRanges();
-   this.attr.addUpdateRange(0,this.nodes.length*4);
+   this.attr.addUpdateRange(0,count*4);
    this.attr.needsUpdate=true;
   }
  }

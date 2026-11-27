@@ -37,6 +37,11 @@ export class WorldMap {
     private minimapCtx?: CanvasRenderingContext2D | null;
     private lastX = 0;
     private lastZ = 0;
+    private paintRow = 0;
+    private paintDone = false;
+    private paintImg?: ImageData;
+    private paintRaf = 0;
+    private disposed = false;
 
     private readonly key = (e: KeyboardEvent) => {
         if (!welcome.visible && e.code === 'KeyM' && !(e.target instanceof HTMLElement && e.target.matches('input,select,textarea'))) {
@@ -68,13 +73,15 @@ export class WorldMap {
             };
         });
         window.addEventListener('keydown', this.key);
-        this.paint();
+        this.setupRegionPins();
+        this.schedulePaint();
     }
 
     toggle(open = !this.open) {
         this.open = open;
         this.panel.classList.toggle('hidden', !open);
         if (open) {
+            if (!this.paintDone) this.paintRemainingRows(Infinity);
             if (document.pointerLockElement) document.exitPointerLock();
             this.syncPlayerDot(this.lastX, this.lastZ);
             this.onOpen();
@@ -87,15 +94,52 @@ export class WorldMap {
         this.dot.style.top = Math.max(0, Math.min(100, (z - north) / (south - north) * 100)).toFixed(2) + '%';
     }
 
-    private paint() {
+    private setupRegionPins() {
+        const { left, right, north, south } = mapBounds;
+        const camps = planHabitatCamps();
+        const footer = this.root.querySelector('.atlas-list footer')!;
+        footer.insertAdjacentHTML('afterbegin', '<span class="atlas-wildlife-key">● 栖息地</span>　<span class="atlas-elite-key">● 精英领地</span><br>');
+        const chart = this.root.querySelector('.atlas-chart')!;
+        for (const r of regions) {
+            const marker = document.createElement('button');
+            marker.className = 'atlas-pin';
+            marker.style.left = (r.x - left) / (right - left) * 100 + '%';
+            marker.style.top = (r.z - north) / (south - north) * 100 + '%';
+            marker.style.borderColor = r.color;
+            marker.textContent = r.name;
+            const wildlife = [...new Set(camps.filter(c => c.region === r.id).map(c => species[c.habitat.species].name))];
+            const description = wildlife.length ? `${r.name} · ${wildlife.join('、')}` : r.subtitle;
+            marker.title = description;
+            this.root.querySelector<HTMLButtonElement>(`[data-region="${r.id}"]`)!.title = description;
+            marker.onclick = () => { this.onTravel(r); this.toggle(false); marker.blur(); };
+            chart.append(marker);
+        }
+    }
+
+    /** Paints the 480×320 topographic atlas in small non-blocking slices across frames to prevent startup jank. */
+    private schedulePaint() {
+        if (this.paintDone || this.disposed) return;
+        this.paintRaf = window.requestAnimationFrame(() => {
+            this.paintRaf = 0;
+            if (this.disposed || this.paintDone) return;
+            this.paintRemainingRows(20);
+            if (!this.paintDone) this.schedulePaint();
+        });
+    }
+
+    private paintRemainingRows(maxRows: number) {
+        if (this.paintDone) return;
         const canvas = this.atlasCanvas;
         const ctx = canvas.getContext('2d')!;
         const w = canvas.width, h = canvas.height;
         const { left, right, north, south } = mapBounds;
-        const img = ctx.createImageData(w, h);
-        const buf = img.data;
+        if (!this.paintImg) {
+            this.paintImg = ctx.createImageData(w, h);
+        }
+        const buf = this.paintImg.data;
+        const endRow = Math.min(h, this.paintRow + maxRows * 2);
 
-        for (let py = 0; py < h; py += 2) {
+        for (let py = this.paintRow; py < endRow; py += 2) {
             const z = north + py / h * (south - north);
             const water = waterLevelAt(z);
             for (let px = 0; px < w; px += 2) {
@@ -105,7 +149,7 @@ export class WorldMap {
                 if (peaklandWeight(x, z) > .4) {
                     [r, g, b] = hslToRgb(154, 20, Math.min(75, 32 + elev * .051));
                 } else if (elev < water) {
-                    r = 68; g = 140; b = 155;
+                    r = 68; g = 140, b = 155;
                 } else if (z < -1450 && elev > water + 90) {
                     [r, g, b] = hslToRgb(200, 23, Math.min(87, 55 + elev * .045));
                 } else if (x < -360 && z < -100 && z > -1000) {
@@ -125,7 +169,12 @@ export class WorldMap {
                 }
             }
         }
-        ctx.putImageData(img, 0, 0);
+        this.paintRow = endRow;
+        if (this.paintRow < h) return;
+
+        ctx.putImageData(this.paintImg, 0, 0);
+        this.paintImg = undefined;
+        this.paintDone = true;
 
         ctx.strokeStyle = '#efdfb580';
         ctx.lineWidth = 1;
@@ -152,24 +201,6 @@ export class WorldMap {
             ctx.strokeStyle = '#283b39';
             ctx.fill();
             ctx.stroke();
-        }
-
-        const footer = this.root.querySelector('.atlas-list footer')!;
-        footer.insertAdjacentHTML('afterbegin', '<span class="atlas-wildlife-key">● 栖息地</span>　<span class="atlas-elite-key">● 精英领地</span><br>');
-        const chart = this.root.querySelector('.atlas-chart')!;
-        for (const r of regions) {
-            const marker = document.createElement('button');
-            marker.className = 'atlas-pin';
-            marker.style.left = (r.x - left) / (right - left) * 100 + '%';
-            marker.style.top = (r.z - north) / (south - north) * 100 + '%';
-            marker.style.borderColor = r.color;
-            marker.textContent = r.name;
-            const wildlife = [...new Set(camps.filter(c => c.region === r.id).map(c => species[c.habitat.species].name))];
-            const description = wildlife.length ? `${r.name} · ${wildlife.join('、')}` : r.subtitle;
-            marker.title = description;
-            this.root.querySelector<HTMLButtonElement>(`[data-region="${r.id}"]`)!.title = description;
-            marker.onclick = () => { this.onTravel(r); this.toggle(false); marker.blur(); };
-            chart.append(marker);
         }
     }
 
@@ -242,6 +273,7 @@ export class WorldMap {
         const span = Math.max(28, Math.min(140, 74 / Math.max(.5, zoom)));
         ctx.fillStyle = '#24525a';
         ctx.fillRect(0, 0, target.width, target.height);
+        if (!this.paintDone) return;
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(src, u - span / 2, v - span / 2, span, span, 0, 0, target.width, target.height);
 
@@ -292,6 +324,8 @@ export class WorldMap {
     }
 
     dispose() {
+        this.disposed = true;
+        if (this.paintRaf) window.cancelAnimationFrame(this.paintRaf);
         window.removeEventListener('keydown', this.key);
         this.root.remove();
     }

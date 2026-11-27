@@ -25,8 +25,10 @@ export interface SenseProfile {
     readonly minRadius: number;
     /** Peak Divine Sense radius (m) at the top minor stage of the realm. */
     readonly maxRadius: number;
-    /** Mana cost per active Divine Sense pulse. */
+    /** Mana cost when opening Divine Sense (initial scan wave). */
     readonly pulseCost: number;
+    /** Continuous mana per second while Divine Sense stays open. */
+    readonly sustainDrain: number;
     /** Mana per second while projecting consciousness out of body. */
     readonly astralDrain: number;
     /** Highest beast rank (0..3) intimidated into fleeing by realm pressure. */
@@ -61,7 +63,7 @@ export const REALMS: readonly RealmDefinition[] = [
         baseMp: 160,
         idleXpRate: 2.5,
         flight: { mode: 'sword', slow: 9, cruise: 18, boost: 36, minMp: 15, hoverDrain: 2, cruiseDrain: 3, boostDrain: 8 },
-        sense: { stageName: '灵觉微芒', minRadius: 70, maxRadius: 120, pulseCost: 20, astralDrain: 0, suppressMaxRank: 0, canAstralProject: false, lockMinRange: 38, lockMaxRange: 50 },
+        sense: { stageName: '灵觉微芒', minRadius: 70, maxRadius: 120, pulseCost: 20, sustainDrain: 3, astralDrain: 0, suppressMaxRank: 0, canAstralProject: false, lockMinRange: 38, lockMaxRange: 50 },
     },
     {
         id: 'foundation',
@@ -71,7 +73,7 @@ export const REALMS: readonly RealmDefinition[] = [
         baseMp: 520,
         idleXpRate: 6.5,
         flight: { mode: 'sword', slow: 12, cruise: 24, boost: 50, minMp: 15, hoverDrain: 2, cruiseDrain: 3, boostDrain: 8 },
-        sense: { stageName: '神识初生', minRadius: 180, maxRadius: 260, pulseCost: 35, astralDrain: 0, suppressMaxRank: 1, canAstralProject: false, lockMinRange: 64, lockMaxRange: 84 },
+        sense: { stageName: '神识初生', minRadius: 180, maxRadius: 260, pulseCost: 35, sustainDrain: 5, astralDrain: 0, suppressMaxRank: 1, canAstralProject: false, lockMinRange: 64, lockMaxRange: 84 },
     },
     {
         id: 'core',
@@ -81,7 +83,7 @@ export const REALMS: readonly RealmDefinition[] = [
         baseMp: 1500,
         idleXpRate: 16,
         flight: { mode: 'sword', slow: 15, cruise: 30, boost: 65, minMp: 15, hoverDrain: 2, cruiseDrain: 3, boostDrain: 8 },
-        sense: { stageName: '神识化液', minRadius: 350, maxRadius: 480, pulseCost: 55, astralDrain: 10, suppressMaxRank: 2, canAstralProject: true, lockMinRange: 100, lockMaxRange: 132 },
+        sense: { stageName: '神识化液', minRadius: 350, maxRadius: 480, pulseCost: 55, sustainDrain: 8, astralDrain: 10, suppressMaxRank: 2, canAstralProject: true, lockMinRange: 100, lockMaxRange: 132 },
     },
     {
         id: 'nascent',
@@ -91,7 +93,7 @@ export const REALMS: readonly RealmDefinition[] = [
         baseMp: 3800,
         idleXpRate: 36,
         flight: { mode: 'void', slow: 0, cruise: 40, boost: 95, minMp: 15, hoverDrain: 1, cruiseDrain: 4, boostDrain: 14 },
-        sense: { stageName: '神识大成', minRadius: 700, maxRadius: 1000, pulseCost: 80, astralDrain: 14, suppressMaxRank: 3, canAstralProject: true, lockMinRange: 155, lockMaxRange: 210 },
+        sense: { stageName: '神识大成', minRadius: 700, maxRadius: 1000, pulseCost: 80, sustainDrain: 12, astralDrain: 14, suppressMaxRank: 3, canAstralProject: true, lockMinRange: 155, lockMaxRange: 210 },
     },
 ] as const;
 
@@ -210,6 +212,7 @@ export interface CultivationStats {
     senseStageName: string;
     senseRadius: number;
     sensePulseCost: number;
+    senseDrain: number;
     senseAstralDrain: number;
     senseSuppressMaxRank: number;
     canAstralProject: boolean;
@@ -288,6 +291,7 @@ export function computeRealmStats(realmIndex: number, stageIndex: number): Culti
         senseStageName: realm.sense.stageName,
         senseRadius,
         sensePulseCost: realm.sense.pulseCost,
+        senseDrain: realm.sense.sustainDrain,
         senseAstralDrain: realm.sense.astralDrain,
         senseSuppressMaxRank: realm.sense.suppressMaxRank,
         canAstralProject: realm.sense.canAstralProject,

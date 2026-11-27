@@ -20,13 +20,18 @@ export class TouchControls {
     private readonly boostBtn: HTMLButtonElement;
     private readonly jumpBtn: HTMLButtonElement;
     private readonly attackBtn: HTMLButtonElement;
+    private readonly senseBtn: HTMLButtonElement;
 
     private stickTouchId?: number;
     private originX = 0;
     private originY = 0;
-    private readonly maxRadius = 52;
+    private stickRadius = 52;
     private attackTimer?: number;
     private attackCharged = false;
+    private senseTimer?: number;
+    private senseLongFired = false;
+    private onSensePulse?: () => void;
+    private onAstralToggle?: () => void;
     private enabled = false;
     private lastFlying?: boolean;
     private lastBoosting?: boolean;
@@ -53,6 +58,10 @@ export class TouchControls {
                 <button type="button" class="touch-btn sub-btn wave-btn" id="touch-wave" aria-label="剑气">
                     <img src="${iconSwordWaveImg}" alt="" draggable="false" />
                     <span>剑气</span>
+                </button>
+                <button type="button" class="touch-btn sub-btn sense-btn" id="touch-sense" aria-label="神识探查，长按离体">
+                    <i class="touch-glyph">识</i>
+                    <span>神识</span>
                 </button>
                 <button type="button" class="touch-btn sub-btn dash-btn" id="touch-boost" aria-label="冲刺加速">
                     <img src="${iconDashImg}" alt="" draggable="false" />
@@ -83,6 +92,7 @@ export class TouchControls {
         this.boostBtn = el<HTMLButtonElement>('touch-boost');
         this.jumpBtn = el<HTMLButtonElement>('touch-jump');
         this.attackBtn = el<HTMLButtonElement>('touch-attack');
+        this.senseBtn = el<HTMLButtonElement>('touch-sense');
 
         this.bindJoystick();
         this.bindButtons(el<HTMLButtonElement>('touch-wave'));
@@ -100,19 +110,37 @@ export class TouchControls {
     }
 
     setVisible(visible: boolean) {
-        this.root.classList.toggle('hidden', !this.enabled || !visible);
-        if (!visible) this.resetStick();
+        const show = this.enabled && visible;
+        const wasVisible = !this.root.classList.contains('hidden');
+        this.root.classList.toggle('hidden', !show);
+        if (!show && wasVisible) {
+            this.resetStick();
+            this.cancelAttack();
+            for (const button of [this.boostBtn, this.jumpBtn, this.descendBtn]) button.classList.remove('pressed');
+            for (const code of ['ShiftLeft', 'Space', 'ControlLeft']) this.input.setHeld(code, false);
+        }
     }
 
-    syncState(flying: boolean, boosting: boolean) {
+    bindDivineSense(onSensePulse: () => void, onAstralToggle: () => void) {
+        this.onSensePulse = onSensePulse;
+        this.onAstralToggle = onAstralToggle;
+    }
+
+    syncState(flying: boolean, boosting: boolean, senseActive = false, astralActive = false) {
         if (!this.enabled) return;
         if (flying !== this.lastFlying) {
             this.lastFlying = flying;
             this.flightBtn.classList.toggle('active', flying);
-            this.descendBtn.classList.toggle('hidden', !flying);
+            this.descendBtn.classList.toggle('hidden', !flying && !astralActive);
             const jumpLabel = this.jumpBtn.querySelector('span');
-            if (jumpLabel) jumpLabel.textContent = flying ? '抬升' : '腾跃';
+            if (jumpLabel) jumpLabel.textContent = (flying || astralActive) ? '抬升' : '腾跃';
         }
+        if (astralActive) {
+            this.descendBtn.classList.remove('hidden');
+            const jumpLabel = this.jumpBtn.querySelector('span');
+            if (jumpLabel) jumpLabel.textContent = '抬升';
+        }
+        this.senseBtn.classList.toggle('active', senseActive || astralActive);
         if (boosting !== this.lastBoosting) {
             this.lastBoosting = boosting;
             this.boostBtn.classList.toggle('active', boosting);
@@ -128,6 +156,7 @@ export class TouchControls {
             e.stopPropagation();
             this.stickTouchId = t.identifier;
             const rect = this.stickBase.getBoundingClientRect();
+            this.stickRadius = rect.width * .44;
             this.originX = rect.left + rect.width / 2;
             this.originY = rect.top + rect.height / 2;
             this.stickBase.classList.add('active');
@@ -174,16 +203,16 @@ export class TouchControls {
         const dx = clientX - this.originX;
         const dy = clientY - this.originY;
         const dist = Math.hypot(dx, dy);
-        const clamped = Math.min(this.maxRadius, dist);
+        const clamped = Math.min(this.stickRadius, dist);
         const angle = Math.atan2(dy, dx);
         const kx = Math.cos(angle) * clamped;
         const ky = Math.sin(angle) * clamped;
         this.stickKnob.style.transform = `translate3d(${kx.toFixed(1)}px, ${ky.toFixed(1)}px, 0)`;
 
-        const norm = dist < 6 ? 0 : clamped / this.maxRadius;
+        const norm = dist < 6 ? 0 : clamped / this.stickRadius;
         this.input.moveX = norm * Math.cos(angle);
         this.input.moveZ = -norm * Math.sin(angle);
-        this.input.sprint = dist > this.maxRadius * 0.88;
+        this.input.sprint = dist > this.stickRadius * 0.88;
         this.stickBase.classList.toggle('sprint', this.input.sprint);
     }
 
@@ -214,6 +243,12 @@ export class TouchControls {
         btn.addEventListener('pointerleave', up);
     }
 
+    private readonly cancelAttack = () => {
+        window.clearTimeout(this.attackTimer);
+        this.attackBtn.classList.remove('pressed', 'charged');
+        this.attackCharged = false;
+    };
+
     private bindButtons(waveBtn: HTMLButtonElement) {
         this.flightBtn.addEventListener('pointerdown', e => {
             e.preventDefault();
@@ -228,6 +263,30 @@ export class TouchControls {
         this.bindHoldButton(this.boostBtn, 'ShiftLeft');
         this.bindHoldButton(this.jumpBtn, 'Space');
         this.bindHoldButton(this.descendBtn, 'ControlLeft');
+
+        const cancelSense = () => {
+            window.clearTimeout(this.senseTimer);
+            this.senseBtn.classList.remove('pressed');
+        };
+        this.senseBtn.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.senseLongFired = false;
+            this.senseBtn.classList.add('pressed');
+            window.clearTimeout(this.senseTimer);
+            this.senseTimer = window.setTimeout(() => {
+                this.senseLongFired = true;
+                this.onAstralToggle?.();
+                this.senseBtn.classList.remove('pressed');
+            }, 430);
+        });
+        this.senseBtn.addEventListener('pointerup', e => {
+            e.preventDefault();
+            if (!this.senseLongFired) this.onSensePulse?.();
+            cancelSense();
+        });
+        this.senseBtn.addEventListener('pointercancel', cancelSense);
+        this.senseBtn.addEventListener('pointerleave', cancelSense);
 
         const startAttack = (e: PointerEvent) => {
             e.preventDefault();
@@ -248,14 +307,9 @@ export class TouchControls {
             this.input.trigger(this.attackCharged ? 'AttackHeavy' : 'AttackLight');
             this.attackCharged = false;
         };
-        const cancelAttack = () => {
-            window.clearTimeout(this.attackTimer);
-            this.attackBtn.classList.remove('pressed', 'charged');
-            this.attackCharged = false;
-        };
         this.attackBtn.addEventListener('pointerdown', startAttack);
         this.attackBtn.addEventListener('pointerup', endAttack);
-        this.attackBtn.addEventListener('pointercancel', cancelAttack);
+        this.attackBtn.addEventListener('pointercancel', this.cancelAttack);
     }
 
     dispose() {
