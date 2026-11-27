@@ -162,11 +162,6 @@ export class NascentBreakthrough {
 
     private readonly lotusGroup = new T.Group();
     private readonly lotusMat: T.ShaderMaterial;
-    private readonly daoWheelGroup = new T.Group();
-    private readonly daoWheelOuter: T.Mesh;
-    private readonly daoWheelInner: T.Mesh;
-    private readonly daoWheelOuterMat: T.ShaderMaterial;
-    private readonly daoWheelInnerMat: T.ShaderMaterial;
     private readonly spiritCocoon: T.Mesh;
     private readonly cocoonMat: T.ShaderMaterial;
     private readonly heavenBeam: T.Mesh;
@@ -228,7 +223,6 @@ export class NascentBreakthrough {
             this.coreShards,
             this.barrierDome,
             this.lotusGroup,
-            this.daoWheelGroup,
             this.spiritCocoon,
             this.heavenBeam,
         ];
@@ -761,61 +755,6 @@ export class NascentBreakthrough {
         this.lotusGroup.visible = false;
         this.group.add(this.lotusGroup);
 
-        // 6. Dual Counter-Rotating Golden Dao Wheel (背后金玉道轮) — Phase 4 Climax
-        const makeWheelMat = (isOuter: boolean) =>
-            new T.ShaderMaterial({
-                uniforms: {
-                    uTime: { value: 0 },
-                    uAlpha: { value: 0 },
-                },
-                transparent: true,
-                depthWrite: false,
-                side: T.DoubleSide,
-                blending: T.AdditiveBlending,
-                fog: false,
-                vertexShader: /* glsl */ `
-                    varying vec2 vUv;
-                    void main() {
-                        vUv = uv * 2.0 - 1.0;
-                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                    }
-                `,
-                fragmentShader: /* glsl */ `
-                    uniform float uTime;
-                    uniform float uAlpha;
-                    varying vec2 vUv;
-                    float ring(float r, float c, float w) { return exp(-pow((r - c) / w, 2.0)); }
-                    void main() {
-                        if (uAlpha <= 0.002) discard;
-                        float r = length(vUv);
-                        if (r > 1.0) discard;
-                        float a = atan(vUv.y, vUv.x);
-
-                        float mainRing = ring(r, 0.84, 0.022) + ring(r, 0.72, 0.012);
-                        float ticks = pow(0.5 + 0.5 * cos(a * ${isOuter ? '12.0' : '8.0'}), 16.0) * smoothstep(0.68, 0.76, r) * (1.0 - smoothstep(0.84, 0.96, r));
-                        float sunRays = pow(0.5 + 0.5 * cos(a * ${isOuter ? '24.0' : '16.0'}), 8.0) * smoothstep(0.78, 0.86, r) * (1.0 - smoothstep(0.86, 1.0, r)) * 0.55;
-                        float innerGlow = ring(r, 0.78, 0.12) * 0.25;
-                        float pulse = 0.88 + 0.12 * sin(uTime * 3.0);
-
-                        vec3 col = mix(vec3(1.0, 0.78, 0.36), vec3(1.0, 0.96, 0.82), clamp(mainRing * 0.7 + ticks * 0.5, 0.0, 1.0));
-                        float alpha = clamp((mainRing + ticks * 0.85 + sunRays + innerGlow) * pulse * 0.78 * uAlpha, 0.0, 0.86);
-                        if (alpha < 0.008) discard;
-                        gl_FragColor = vec4(col, alpha);
-                    }
-                `,
-            });
-
-        this.daoWheelOuterMat = makeWheelMat(true);
-        this.daoWheelInnerMat = makeWheelMat(false);
-        this.daoWheelOuter = new T.Mesh(new T.PlaneGeometry(4.4, 4.4), this.daoWheelOuterMat);
-        this.daoWheelInner = new T.Mesh(new T.PlaneGeometry(3.0, 3.0), this.daoWheelInnerMat);
-        this.daoWheelInner.position.z = 0.06;
-        this.daoWheelOuter.renderOrder = 8;
-        this.daoWheelInner.renderOrder = 8;
-        this.daoWheelGroup.add(this.daoWheelOuter, this.daoWheelInner);
-        this.daoWheelGroup.visible = false;
-        this.group.add(this.daoWheelGroup);
-
         // 7. Translucent Daoist Spirit Cocoon Aura Veil (灵光光茧)
         this.cocoonMat = new T.ShaderMaterial({
             uniforms: {
@@ -1191,21 +1130,6 @@ export class NascentBreakthrough {
             this.lotusGroup.scale.set(bloomScale, bloomScale * (0.65 + 0.35 * climaxIn), bloomScale);
             this.lotusMat.uniforms.uTime.value = t;
             this.lotusMat.uniforms.uAlpha.value = climaxAlpha;
-        }
-
-        this.daoWheelGroup.visible = climaxAlpha > 0.005;
-        if (this.daoWheelGroup.visible) {
-            // Floats regally right behind the cultivator's upper back!
-            this.daoWheelGroup.position.set(-fwdX * 0.52, hoverLocalY + 1.55, -fwdZ * 0.52);
-            this.daoWheelGroup.rotation.y = this.baseHeading;
-            const wheelScale = 0.35 + 0.72 * climaxIn;
-            this.daoWheelGroup.scale.setScalar(wheelScale);
-            this.daoWheelOuter.rotation.z = t * 0.26;
-            this.daoWheelInner.rotation.z = -t * 0.44;
-            this.daoWheelOuterMat.uniforms.uTime.value = t;
-            this.daoWheelOuterMat.uniforms.uAlpha.value = climaxAlpha;
-            this.daoWheelInnerMat.uniforms.uTime.value = t;
-            this.daoWheelInnerMat.uniforms.uAlpha.value = climaxAlpha;
         }
 
         const cocoonAlpha = climaxIn * (1 - smooth01(T_P4_END - 0.6, T_P4_END + 1.6, t));
