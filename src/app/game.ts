@@ -383,7 +383,7 @@ export class Game {
 
     constructor() {
         this.renderer = new T.WebGLRenderer({
-            antialias: !this.device.isMobile,
+            antialias: true,
             powerPreference: 'high-performance',
             stencil: false,
         });
