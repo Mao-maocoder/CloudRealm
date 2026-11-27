@@ -124,7 +124,7 @@ export class PlayerVitals {
 
     /** Evaluates whether a skill can be cast under the current realm's MaxMP & live MP. */
     checkSkill(skill: SkillId): SkillAvailability {
-        return evaluateSkillAvailability(skill, this.mp, this.stats.maxMp);
+        return evaluateSkillAvailability(skill, this.mp, this.stats.maxMp, this.realmIndex);
     }
 
     /** Checks mana availability and posts an explicit Xianxia HUD notice if blocked. */
@@ -134,11 +134,10 @@ export class PlayerVitals {
         if (notify) {
             const label = SKILL_LABEL[skill];
             if (status.reason === 'cap') {
-                this.announce(
-                    `${label}需 ${status.cost} 灵力 · 当前上限 ${this.stats.maxMp} 不足，请突破至${status.requiredRealmName}期`,
-                    now,
-                    3.0,
-                );
+                const msg = skill === 'pressure'
+                    ? `${label}仅对${status.requiredRealmName}期及以上修士开放`
+                    : `${label}需 ${status.cost} 灵力 · 当前上限 ${this.stats.maxMp} 不足，请突破至${status.requiredRealmName}期`;
+                this.announce(msg, now, 3.0);
             } else {
                 this.announce(
                     `灵力不足 · ${label}需 ${status.cost}，当前 ${Math.floor(this.mp)}`,
@@ -487,6 +486,7 @@ export class PlayerVitals {
                 fireball: this.checkSkill('fireball'),
                 giantSword: this.checkSkill('giantSword'),
                 swordArray: this.checkSkill('swordArray'),
+                pressure: this.checkSkill('pressure'),
             },
         };
     }

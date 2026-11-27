@@ -1,4 +1,4 @@
-export type SkillId = 'swordWave' | 'fireball' | 'giantSword' | 'swordArray';
+export type SkillId = 'swordWave' | 'fireball' | 'giantSword' | 'swordArray' | 'pressure';
 export type FlightMode = 'sword' | 'void';
 
 export interface FlightProfile {
@@ -109,6 +109,7 @@ export const SKILL_MANA_COST: Record<SkillId, number> = {
     fireball: 45,
     giantSword: 360,
     swordArray: 1200,
+    pressure: 420,
 };
 
 export const SKILL_LABEL: Record<SkillId, string> = {
@@ -116,6 +117,7 @@ export const SKILL_LABEL: Record<SkillId, string> = {
     fireball: '火球术',
     giantSword: '巨剑术',
     swordArray: '万剑归宗',
+    pressure: '元婴威压',
 };
 
 export const FIREBALL_CHARGE_EXTRA_COST = 15;
@@ -333,9 +335,13 @@ export function evaluateSkillAvailability(
     skill: SkillId,
     currentMp: number,
     maxMp: number,
+    realmIndex = 0,
 ): SkillAvailability {
     const cost = SKILL_MANA_COST[skill];
-    const req = requiredRealmForMana(cost);
+    if (skill === 'pressure' && realmIndex < 3) {
+        return { cost, canCast: false, reason: 'cap', requiredRealmName: REALMS[3].name };
+    }
+    const req = skill === 'pressure' ? REALMS[3] : requiredRealmForMana(cost);
     if (maxMp < cost) {
         return { cost, canCast: false, reason: 'cap', requiredRealmName: req.name };
     }

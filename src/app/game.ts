@@ -91,6 +91,7 @@ export class Game {
     readonly divineSense: DivineSense;
     readonly dragonSensePressure: DragonSensePressureFX;
     readonly dragonGravityPressure: DragonGravityPressureFX;
+    readonly nascentGravityPressure: DragonGravityPressureFX;
     private dragonBacklashCooldownUntil = 0;
     private dragonPressureWarned = false;
     private dragonSuppressionAge = -1;
@@ -137,6 +138,7 @@ export class Game {
         if (this.nascentBreakthrough.active) return;
         if (e.code === 'KeyZ' && !e.repeat) this.triggerDivineSensePulse();
         else if (e.code === 'KeyG' && !e.repeat) this.toggleAstralProjection();
+        else if (e.code === 'KeyR' && !e.repeat && !this.divineSense.astralActive) this.triggerNascentPressure();
         else if (e.code === 'Digit2' && !e.repeat && !this.divineSense.astralActive) this.hud.useItem('heal');
         else if (e.code === 'Digit3' && !e.repeat && !this.divineSense.astralActive) this.hud.useItem('pill');
         else if (e.code === 'KeyB' && !e.repeat && !this.divineSense.astralActive) this.triggerBreakthrough();
@@ -179,6 +181,42 @@ export class Game {
             parts.push(`⚠ 触怒 ${report.alertedLeaderName ?? '高阶妖兽'} 反警觉！`);
         }
         this.vitals.announce(parts.join(' · '), this.time, report.alertedHighCount > 0 ? 3.8 : 3.0);
+        this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+    }
+
+    private triggerNascentPressure() {
+        if (this.nascentBreakthrough.active || this.dragonSuppressionAge >= 0 || this.divineSense.astralActive) return;
+        if (!this.vitals.spendSkillMana('pressure', this.time)) {
+            this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+            return;
+        }
+        const lockedTarget = this.senseCombatTarget ?? (
+            this.divineSense.insightActive
+                ? this.wildlife.combatTarget(this.player.position, this.camera, this.vitals.stats.senseLockRange, true)
+                : undefined
+        );
+        const tx = lockedTarget ? lockedTarget.position.x : this.player.position.x;
+        const tz = lockedTarget ? lockedTarget.position.z : this.player.position.z;
+        const anchor = new T.Vector3(tx, this.player.floor(tx, tz), tz);
+        this.nascentGravityPressure.trigger(anchor, 3.0);
+        this.audio.playDragonImpact();
+        this.audio.playDivineSensePulse();
+        // Only suppresses wild beasts around the target anchor; high-tier Bosses like Ancient Dragon are immune
+        const suppressed = this.wildlife.applyNascentPressure(anchor, 7.5, 4.2, 48);
+        const bossNear = this.dragonBoss.isAlive && this.dragonBoss.group.position.distanceTo(anchor) <= 36;
+        let msg: string;
+        if (lockedTarget) {
+            msg = suppressed > 1
+                ? `元婴威压降临 · 重力场镇压【${lockedTarget.displayName}】及周边共 ${suppressed} 头妖兽！`
+                : `元婴威压降临 · 重力场镇压【${lockedTarget.displayName}】！`;
+        } else if (bossNear) {
+            msg = suppressed > 0 ? `元婴威压镇压 ${suppressed} 头妖兽 · 对高阶古龙无效！` : '元婴威压释放 · 古龙境界远高于你，威压无效！';
+        } else {
+            msg = suppressed > 0
+                ? `元婴威压降临 · 镇压周边 ${suppressed} 头妖兽`
+                : '未锁定妖兽 · 威压在自身脚下释放（按 Z 开神识可锁定野怪）';
+        }
+        this.vitals.announce(msg, this.time, 2.8);
         this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
     }
 
@@ -553,6 +591,7 @@ export class Game {
         this.divineSense = new DivineSense(this.scene);
         this.dragonSensePressure = new DragonSensePressureFX();
         this.dragonGravityPressure = new DragonGravityPressureFX(this.scene);
+        this.nascentGravityPressure = new DragonGravityPressureFX(this.scene, { theme: 'nascent', scale: 0.48 });
         if (this.vitals.realmIndex >= 2) {
             void this.ensureNascentAssetsLoaded();
         }
@@ -675,6 +714,7 @@ export class Game {
             () => this.triggerDivineSensePulse(),
             () => this.toggleAstralProjection(),
         );
+        this.hud.bindPressure(() => this.triggerNascentPressure());
         this.touchControls.bindDivineSense(
             () => this.triggerDivineSensePulse(),
             () => this.toggleAstralProjection(),
@@ -994,6 +1034,7 @@ export class Game {
         this.giantSword.clear();
         this.divineSense.clear();
         this.dragonGravityPressure.clear();
+        this.nascentGravityPressure.clear();
         this.dragonSuppressionAge = -1;
         this.dragonSuppressionExecuted = false;
         this.follow.reset();
@@ -1061,9 +1102,6 @@ export class Game {
         // Never burn 100% GPU rendering the 3D valley at 60 FPS behind the opaque Welcome loading screen!
         // This keeps the loading bar & spinner completely smooth and speeds up asset loading/parsing.
         if (!this.hud.started) return;
-        if (this.input.take('KeyR')) {
-            this.returnToValley();
-        }
         if (this.hud.started && this.resolutionScaler.sample(raw)) {
             this.applyPixelRatio();
         }
@@ -1171,6 +1209,7 @@ export class Game {
             this.renderer.getPixelRatio(),
         );
         this.dragonGravityPressure.update(dt);
+        this.nascentGravityPressure.update(dt);
         this.spellLights.beginFrame();
         this.swordEffects.collectLights(this.spellLights);
         this.voidFlight.collectLights(this.spellLights);
@@ -1179,6 +1218,7 @@ export class Game {
         this.swordArray.collectLights(this.spellLights);
         this.nascentBreakthrough.collectLights(this.spellLights);
         this.dragonGravityPressure.collectLights(this.spellLights);
+        this.nascentGravityPressure.collectLights(this.spellLights);
         this.spellLights.setShadowEnabled(this.renderer.shadowMap.enabled);
         const dn = this.atmosphere.dayNight.state;
         this.spellLights.commit(dn.nightFactor, dn.duskFactor);
@@ -1556,6 +1596,7 @@ export class Game {
         this.divineSense.dispose();
         this.dragonSensePressure.dispose();
         this.dragonGravityPressure.dispose();
+        this.nascentGravityPressure.dispose();
         this.swordArray.dispose();
         this.fireball.dispose();
         this.giantSword.dispose();
@@ -1566,4 +1607,8 @@ export class Game {
         this.renderer.dispose();
         this.renderer.domElement.remove();
     }
+}
+
+if (import.meta.hot) {
+    import.meta.hot.accept(() => location.reload());
 }

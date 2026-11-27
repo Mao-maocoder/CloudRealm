@@ -20,6 +20,8 @@ import iconGiantSwordImg from './assets/skills/giant-sword.jpg';
 import iconHealthPotionImg from './assets/skills/health-potion.jpg';
 import iconFoundationPillImg from './assets/skills/foundation-pill.jpg';
 
+const ICON_PRESSURE_URI = `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><defs><radialGradient id="g" cx="50%" cy="46%" r="54%"><stop offset="0%" stop-color="#fff4c4"/><stop offset="35%" stop-color="#5ce4ff"/><stop offset="75%" stop-color="#174c78"/><stop offset="100%" stop-color="#071324"/></radialGradient></defs><rect width="96" height="96" fill="url(#g)"/><g fill="none" stroke-linecap="round"><circle cx="48" cy="48" r="34" stroke="#8ff0ff" stroke-width="2.6" stroke-dasharray="10 6" opacity=".88"/><ellipse cx="48" cy="60" rx="28" ry="11" stroke="#ffe596" stroke-width="2.8"/><ellipse cx="48" cy="46" rx="21" ry="8" stroke="#9cf4ff" stroke-width="2" opacity=".82"/><path d="M48 16v38M34 22v28M62 22v28M24 30v18M72 30v18" stroke="#e2fbff" stroke-width="2.4" opacity=".92"/><path d="M40 46l8 10 8-10" stroke="#ffe596" stroke-width="3.2" stroke-linejoin="round"/></g></svg>`)}`;
+
 export interface SkillSlotConfig {
     id: string;
     label: string;
@@ -180,6 +182,7 @@ export class HUD {
     private onFireballHold?: (held: boolean) => void;
     private onSwordArray?: () => void;
     private onGiantSword?: () => void;
+    private onPressure?: () => void;
     private onBreakthrough?: () => void;
     private onSetRealm?: (realmIndex: number) => void;
     private onAdvanceTier?: () => void;
@@ -571,6 +574,7 @@ export class HUD {
             { id: 'fireball', label: '火球术', key: 'E', cost: SKILL_MANA_COST.fireball, icon: iconFireballImg, kind: 'skill', title: `按住蓄力、松开释放火球术 (E · 消耗 ${SKILL_MANA_COST.fireball} 灵力)`, onHoldChange: held => this.onFireballHold?.(held) },
             { id: 'array', label: '万剑归宗', key: 'Q', cost: SKILL_MANA_COST.swordArray, icon: iconSwordRainImg, kind: 'skill', title: `释放万剑归宗 (Q · 消耗 ${SKILL_MANA_COST.swordArray} 灵力 · 需结丹期)`, onClick: () => this.onSwordArray?.() },
             { id: 'giantSword', label: '巨剑术', key: '1', cost: SKILL_MANA_COST.giantSword, icon: iconGiantSwordImg, kind: 'skill', title: `召唤凌空巨剑 (1 · 消耗 ${SKILL_MANA_COST.giantSword} 灵力 · 需筑基期)`, onClick: () => this.onGiantSword?.() },
+            { id: 'pressure', label: '元婴威压', key: 'R', cost: SKILL_MANA_COST.pressure, icon: ICON_PRESSURE_URI, kind: 'skill', title: `释放元婴重力场威压 (R · 消耗 ${SKILL_MANA_COST.pressure} 灵力 · 仅元婴期开放 · 仅对野怪生效)`, onClick: () => this.onPressure?.() },
             { id: 'heal', label: '回复药', key: '2', icon: iconHealthPotionImg, kind: 'item', count: this.healCount, title: '使用回复药恢复生命 (2)', onClick: () => this.useItem('heal') },
             { id: 'pill', label: '筑基丹', key: '3', icon: iconFoundationPillImg, kind: 'item', count: this.pillCount, title: '服用筑基丹回复灵力与修为 (3)', onClick: () => this.useItem('pill') },
         ];
@@ -695,6 +699,10 @@ export class HUD {
     bindDivineSense(onTriggerSense: () => void, onToggleAstral: () => void) {
         this.onTriggerSense = onTriggerSense;
         this.onToggleAstral = onToggleAstral;
+    }
+
+    bindPressure(onPressure: () => void) {
+        this.onPressure = onPressure;
     }
 
     /** Updates Divine Sense 3D-projected beast markers, astral overlay, quick buttons, and passive danger arc. */
@@ -953,6 +961,7 @@ export class HUD {
             ['fireball', 'fireball'],
             ['array', 'swordArray'],
             ['giantSword', 'giantSword'],
+            ['pressure', 'pressure'],
         ];
         for (const [slotId, skillKey] of skillMap) {
             const slotEl = this.skillSlotEls.get(slotId);

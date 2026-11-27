@@ -513,6 +513,10 @@ export class Wildlife {
         return this.simulation.applyDivineSensePulse(origin, radius, playerRealmRank, suppressMaxRank);
     }
 
+    applyNascentPressure(origin: T.Vector3, radius: number, duration = 4.2, baseDamage = 48): number {
+        return this.simulation.applyNascentPressure(origin, radius, duration, baseDamage);
+    }
+
     /**
      * Collects:
      * - 3D-projected beast markers (when `senseActive`)

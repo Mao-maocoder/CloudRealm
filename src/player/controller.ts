@@ -236,8 +236,6 @@ export class Player {
         this.previousTakeoffOffset = this.takeoffOffset;
         this.takeoffOffset = Math.max(0, this.takeoffOffset - 3.5 * dt);
         this.previousSwimOffset = this.swimOffset;
-        if (this.input.take('KeyR'))
-            this.reset();
 
         const voidMode = this.flightProfile.mode === 'void';
 

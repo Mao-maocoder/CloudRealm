@@ -761,4 +761,28 @@ export class WildlifeSimulation {
 
         return { detected, highThreatCount, suppressedCount, alertedHighCount, alertedLeaderName };
     }
+
+    /**
+     * Nascent Soul Gravity-Field Pressure (元婴威压):
+     * Crushes, staggers, and intimidates wild beasts within `radius` (does not affect Boss entities).
+     */
+    applyNascentPressure(origin: Vector3, radius: number, duration = 4.2, baseDamage = 48): number {
+        let count = 0;
+        const rSq = radius * radius;
+        for (const a of this.active) {
+            if (!a.ready || a.state === 'Defeat' || a.health <= 0) continue;
+            const dx = a.position.x - origin.x;
+            const dz = a.position.z - origin.z;
+            if (dx * dx + dz * dz > rSq) continue;
+            a.angerUntil = 0;
+            a.fightUntil = 0;
+            a.hunt = undefined;
+            a.intimidatedUntil = Math.max(a.intimidatedUntil, this.time + duration);
+            a.thinkAt = Math.max(a.thinkAt, this.time + Math.min(duration, 2.8));
+            a.speed = 0;
+            this.damage(a, baseDamage, true, origin);
+            count++;
+        }
+        return count;
+    }
 }
