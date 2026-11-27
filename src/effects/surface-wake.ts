@@ -14,13 +14,20 @@ export class SurfaceWake {
  readonly uniforms={uWalkTrail:{value:Array.from({length:8},()=>new T.Vector4(0,-10000,0,0))},uTime:{value:0},uWakeTex:{value:null as T.Texture|null},uWake:{value:new T.Vector4()}};
  readonly vortex=new VortexWake({heightAt:(x:number,z:number)=>Math.max(heightAt(x,z),waterSurfaceAt(x,z))});
  readonly field:Wake;
- private forward=new T.Vector3();private previous=new T.Vector3(1e9,1e9,1e9);
+ private forward=new T.Vector3();private previous=new T.Vector3(1e9,1e9,1e9);private idleAge=0;
  constructor(renderer:T.WebGLRenderer, quality: Quality = 'medium'){
-  const wakeSize = detectDevice().isMobile || quality === 'low' ? 256 : 512;
+  const wakeSize = quality === 'low' ? 256 : 512;
   this.field=new Wake(renderer,this.vortex,this.uniforms,wakeSize,256);
  }
  update(dt:number,time:number,player:Player){
   const p=player.position,speed=player.velocity.length();this.uniforms.uTime.value=time;
+  const airborne=Boolean(player.flying);
+  if(!airborne&&speed<.05&&this.previous.distanceToSquared(p)<1e-5){
+   this.idleAge+=dt;
+   if(this.idleAge>1.6)return;
+  }else{
+   this.idleAge=0;
+  }
   for(const stamp of this.uniforms.uWalkTrail.value)stamp.w*=Math.exp(-dt*3.5);
   if(this.previous.distanceTo(p)>80)for(const stamp of this.uniforms.uWalkTrail.value)stamp.w=0;
   const groundHeight=Math.max(heightAt(p.x,p.z),floatingFloor(p.x,p.z,p.y+.45));
@@ -37,7 +44,6 @@ export class SurfaceWake {
   this.previous.copy(p);this.forward.copy(player.velocity);if(speed>.1)this.forward.divideScalar(speed);else this.forward.set(Math.sin(player.heading),0,-Math.cos(player.heading));
   const water=waterSurfaceAt(p.x,p.z),ground=Math.max(groundHeight,water);
   // Only shed the wide aerial vortex wind-field while flying; walking uses local underfoot uWalkTrail parting only.
-  const airborne=Boolean(player.flying);
   const wakeSpeed=airborne?speed:0;
   const wakeAgl=airborne?Math.max(0,p.y-ground):99;
   const flight={pos:p,fwd:this.forward,yaw:player.heading,roll:player.bank,speed:wakeSpeed,boosting:airborne&&speed>45?1:0,agl:wakeAgl,overWater:airborne&&Number.isFinite(water)&&water>=groundHeight};

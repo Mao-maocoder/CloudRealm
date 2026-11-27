@@ -248,7 +248,7 @@ export class AudioManager {
             this.bgmGain?.gain.setTargetAtTime(this.bgmVolume * this.targetBgmDuck, now, 0.45);
         }
         if (this.bossDroneGain) {
-            const droneLvl = opts.paused ? 0 : Math.max(opts.bossCombat ? 0.075 : 0, opts.dragonPressure * 0.14);
+            const droneLvl = opts.paused ? 0 : opts.bossCombat ? 0.065 : 0;
             this.bossDroneGain.gain.setTargetAtTime(droneLvl, now, 0.35);
         }
 
@@ -291,17 +291,8 @@ export class AudioManager {
             }
         }
 
-        // 5. Blood-red Divine Sense pressure heartbeat (lub-dub accelerating with pressure!)
-        if (opts.dragonPressure > 0.18) {
-            const beatInterval = 0.95 - opts.dragonPressure * 0.52;
-            this.heartbeatAccum += cdt;
-            if (this.heartbeatAccum >= beatInterval) {
-                this.heartbeatAccum = 0;
-                this.playHeartbeat(opts.dragonPressure);
-            }
-        } else {
-            this.heartbeatAccum = 0;
-        }
+        // 5. Blood-red Divine Sense pressure uses the dedicated dragon_backlash.mp3 asset on trigger (no extra synth heartbeat).
+        this.heartbeatAccum = 0;
     }
 
     // =========================================================================

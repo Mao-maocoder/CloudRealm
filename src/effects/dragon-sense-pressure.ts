@@ -14,80 +14,68 @@ function ensureStyles() {
     z-index: 48;
     overflow: hidden;
     opacity: 0;
+    visibility: hidden;
     transition: opacity 0.14s ease-out;
+    contain: strict;
 }
 .dragon-pressure-root.active {
     opacity: 1;
+    visibility: visible;
 }
 .dragon-pressure-vignette {
     position: absolute;
-    inset: -6%;
+    inset: -4%;
     background:
         radial-gradient(ellipse at 50% 48%,
             rgba(120, 4, 12, 0.04) 18%,
             rgba(155, 8, 18, 0.48) 58%,
-            rgba(110, 0, 10, 0.90) 92%,
-            rgba(48, 0, 4, 0.98) 100%);
-    mix-blend-mode: multiply;
+            rgba(110, 0, 10, 0.88) 92%,
+            rgba(48, 0, 4, 0.96) 100%);
     opacity: var(--dp-shroud, 0);
-    will-change: opacity, transform;
-}
-.dragon-pressure-crimson-tint {
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(circle at 50% 45%,
-            rgba(220, 18, 28, 0.14) 0%,
-            rgba(185, 8, 20, 0.42) 65%,
-            rgba(120, 0, 8, 0.74) 100%);
-    opacity: var(--dp-tint, 0);
     will-change: opacity;
 }
 .dragon-pressure-stage {
     position: absolute;
-    inset: -6%;
+    inset: -5%;
     transform: scale(var(--dp-gaze-scale, 1.12)) translate3d(var(--dp-shake-x, 0px), var(--dp-shake-y, 0px), 0);
     will-change: transform;
 }
 .dragon-pressure-gaze {
     position: absolute;
     inset: 0;
-    background-image: url("${BACKLASH_ART_URL}");
-    background-size: cover;
-    background-position: center;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
     opacity: var(--dp-gaze, 0);
-    filter: url(#dragon-backlash-warp) contrast(1.2) saturate(1.36);
-    will-change: opacity, filter;
+    will-change: opacity;
 }
 .dragon-pressure-gaze-ghost {
     position: absolute;
     inset: 0;
-    background-image: url("${BACKLASH_ART_URL}");
-    background-size: cover;
-    background-position: center;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
     opacity: var(--dp-ghost, 0);
     mix-blend-mode: screen;
-    transform: translate3d(var(--dp-split-x, 0px), var(--dp-split-y, 0px), 0) scale(1.025);
-    filter: saturate(2.2) contrast(1.3) hue-rotate(-8deg);
+    transform: translate3d(var(--dp-split-x, 0px), var(--dp-split-y, 0px), 0) scale(1.02);
     will-change: opacity, transform;
 }
 .dragon-eye-glow {
     position: absolute;
     top: 41.2%;
-    width: 22vmax;
-    height: 14vmax;
-    margin-left: -11vmax;
-    margin-top: -7vmax;
+    width: 24vmax;
+    height: 15vmax;
+    margin-left: -12vmax;
+    margin-top: -7.5vmax;
     border-radius: 50%;
     background: radial-gradient(ellipse at 50% 50%,
-        rgba(255, 238, 210, 0.95) 0%,
-        rgba(255, 72, 42, 0.85) 22%,
-        rgba(235, 12, 24, 0.52) 52%,
+        rgba(255, 238, 210, 0.94) 0%,
+        rgba(255, 72, 42, 0.78) 24%,
+        rgba(235, 12, 24, 0.42) 54%,
         rgba(140, 0, 12, 0.0) 78%);
     mix-blend-mode: screen;
     opacity: var(--dp-eye, 0);
     transform: scale(var(--dp-eye-scale, 1));
-    filter: blur(4px);
     will-change: opacity, transform;
 }
 .dragon-eye-glow.left { left: 32.2%; }
@@ -96,19 +84,18 @@ function ensureStyles() {
     position: absolute;
     top: 41.2%;
     width: 44vmax;
-    height: 3.2vmax;
+    height: 3.4vmax;
     margin-left: -22vmax;
-    margin-top: -1.6vmax;
+    margin-top: -1.7vmax;
     border-radius: 50%;
     background: radial-gradient(ellipse at 50% 50%,
-        rgba(255, 245, 220, 0.92) 0%,
-        rgba(255, 58, 38, 0.72) 26%,
-        rgba(210, 8, 22, 0.25) 60%,
+        rgba(255, 245, 220, 0.90) 0%,
+        rgba(255, 58, 38, 0.65) 28%,
+        rgba(210, 8, 22, 0.22) 60%,
         rgba(120, 0, 10, 0) 100%);
     mix-blend-mode: screen;
     opacity: var(--dp-flare, 0);
     transform: scaleX(var(--dp-flare-sx, 1)) scaleY(var(--dp-flare-sy, 1));
-    filter: blur(2.5px);
     will-change: opacity, transform;
 }
 .dragon-eye-flare.left { left: 32.2%; }
@@ -126,9 +113,9 @@ function ensureStyles() {
     position: absolute;
     inset: 0;
     background: radial-gradient(circle at 50% 50%,
-        rgba(255, 195, 190, 0.92) 0%,
-        rgba(255, 38, 42, 0.78) 38%,
-        rgba(140, 0, 10, 0.65) 100%);
+        rgba(255, 195, 190, 0.90) 0%,
+        rgba(255, 38, 42, 0.72) 38%,
+        rgba(140, 0, 10, 0.58) 100%);
     opacity: var(--dp-flash, 0);
     mix-blend-mode: screen;
     will-change: opacity;
@@ -142,16 +129,14 @@ function ensureStyles() {
     margin-left: -12vmin;
     margin-top: -12vmin;
     border-radius: 50%;
-    border: 3px solid rgba(255, 58, 52, 0.92);
-    box-shadow:
-        0 0 32px rgba(255, 22, 32, 0.95),
-        inset 0 0 28px rgba(255, 48, 36, 0.75);
+    border: 3px solid rgba(255, 58, 52, 0.90);
+    box-shadow: 0 0 24px rgba(255, 22, 32, 0.85);
     opacity: 0;
     transform: scale(0.2);
     will-change: transform, opacity;
 }
 .dragon-pressure-ring.fire {
-    animation: dragonBacklashRing 1.05s cubic-bezier(0.12, 0.82, 0.25, 1) forwards;
+    animation: dragonBacklashRing 1.0s cubic-bezier(0.12, 0.82, 0.25, 1) forwards;
 }
 .dragon-pressure-ring.fire.r2 {
     animation-delay: 0.11s;
@@ -162,9 +147,9 @@ function ensureStyles() {
     border-width: 1.5px;
 }
 @keyframes dragonBacklashRing {
-    0%   { opacity: 0.98; transform: scale(0.18); }
-    35%  { opacity: 0.85; }
-    100% { opacity: 0;    transform: scale(7.4); }
+    0%   { opacity: 0.95; transform: scale(0.18); }
+    35%  { opacity: 0.80; }
+    100% { opacity: 0;    transform: scale(7.2); }
 }
 `;
     document.head.appendChild(style);
@@ -182,47 +167,51 @@ interface BloodEmber {
 }
 
 /**
- * Full-screen cultivation Divine Sense oppression & backlash VFX for the Ancient Dragon Boss:
- * - Gradual blood-red mist shroud & heartbeat pulse as a lower-realm (< 元婴中期) player probes closer
- * - Real-time animated SVG turbulence/displacement warp + chromatic ghost split
- * - Dual pulsing crimson eye-flame halos, anamorphic blood flares, and procedural rising eye-flame wisps/sparks
- * - Concentric crimson shockwave rings + violent tremor on backlash
+ * GPU-composited Divine Sense oppression & backlash VFX for the Ancient Dragon Boss.
+ * Zero CPU SVG-filter rasterization and pre-baked ember sprite stamping for zero hitching.
  */
 export class DragonSensePressureFX {
     private readonly root: HTMLDivElement;
     private readonly rings: HTMLDivElement[] = [];
     private readonly canvas: HTMLCanvasElement;
     private readonly ctx: CanvasRenderingContext2D | null;
-    private readonly turbEl: SVGFETurbulenceElement | null;
-    private readonly dispEl: SVGFEDisplacementMapElement | null;
+    private readonly emberSprite: HTMLCanvasElement;
     private readonly embers: BloodEmber[] = [];
 
     private smoothPressure = 0;
     private pulsePhase = 0;
     private elapsed = 0;
     private backlashAge = -1;
-    private readonly backlashDuration = 2.8;
+    private readonly backlashDuration = 2.6;
     private canvasW = 0;
     private canvasH = 0;
+    private active = false;
 
     constructor() {
         ensureStyles();
+
+        // Pre-bake a single 64x64 radial flame sprite once so canvas particles never allocate gradients per frame
+        this.emberSprite = document.createElement('canvas');
+        this.emberSprite.width = 64;
+        this.emberSprite.height = 64;
+        const sctx = this.emberSprite.getContext('2d');
+        if (sctx) {
+            const g = sctx.createRadialGradient(32, 32, 3, 32, 32, 32);
+            g.addColorStop(0.0, 'rgba(255, 224, 170, 0.95)');
+            g.addColorStop(0.35, 'rgba(255, 54, 28, 0.80)');
+            g.addColorStop(0.75, 'rgba(175, 6, 18, 0.36)');
+            g.addColorStop(1.0, 'rgba(90, 0, 8, 0)');
+            sctx.fillStyle = g;
+            sctx.fillRect(0, 0, 64, 64);
+        }
+
         this.root = document.createElement('div');
         this.root.className = 'dragon-pressure-root';
         this.root.innerHTML = `
-            <svg width="0" height="0" style="position:absolute;pointer-events:none" aria-hidden="true">
-                <defs>
-                    <filter id="dragon-backlash-warp" x="-10%" y="-10%" width="120%" height="120%">
-                        <feTurbulence id="dragon-warp-turb" type="fractalNoise" baseFrequency="0.012 0.022" numOctaves="2" seed="7" result="noise"/>
-                        <feDisplacementMap id="dragon-warp-disp" in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G"/>
-                    </filter>
-                </defs>
-            </svg>
             <div class="dragon-pressure-vignette"></div>
-            <div class="dragon-pressure-crimson-tint"></div>
             <div class="dragon-pressure-stage">
-                <div class="dragon-pressure-gaze"></div>
-                <div class="dragon-pressure-gaze-ghost"></div>
+                <img class="dragon-pressure-gaze" src="${BACKLASH_ART_URL}" alt="" decoding="async" />
+                <img class="dragon-pressure-gaze-ghost" src="${BACKLASH_ART_URL}" alt="" decoding="async" />
                 <div class="dragon-eye-glow left"></div>
                 <div class="dragon-eye-glow right"></div>
                 <div class="dragon-eye-flare left"></div>
@@ -241,14 +230,15 @@ export class DragonSensePressureFX {
         );
         this.canvas = this.root.querySelector('.dragon-pressure-canvas') as HTMLCanvasElement;
         this.ctx = this.canvas.getContext('2d');
-        this.turbEl = this.root.querySelector('#dragon-warp-turb');
-        this.dispEl = this.root.querySelector('#dragon-warp-disp');
+        // Pre-decode backlash art asynchronously at startup so first trigger never stalls the main thread
+        const imgs = this.root.querySelectorAll<HTMLImageElement>('img');
+        imgs.forEach(img => { void img.decode?.().catch(() => {}); });
         document.body.appendChild(this.root);
     }
 
     private ensureCanvasSize() {
-        const w = Math.max(320, Math.floor(window.innerWidth * 0.6));
-        const h = Math.max(180, Math.floor(window.innerHeight * 0.6));
+        const w = Math.max(320, Math.floor(window.innerWidth * 0.45));
+        const h = Math.max(180, Math.floor(window.innerHeight * 0.45));
         if (w !== this.canvasW || h !== this.canvasH) {
             this.canvasW = w;
             this.canvasH = h;
@@ -258,7 +248,7 @@ export class DragonSensePressureFX {
     }
 
     private spawnEyeFlame(burst = false) {
-        if (this.embers.length > 90) return;
+        if (this.embers.length >= 36) return;
         const leftEye = Math.random() < 0.5;
         const ex = (leftEye ? 0.322 : 0.684) * this.canvasW;
         const ey = 0.412 * this.canvasH;
@@ -267,16 +257,16 @@ export class DragonSensePressureFX {
             ? (Math.random() - 0.5) * Math.PI * 2
             : -Math.PI * 0.5 + (Math.random() - 0.5) * 1.15;
         const speed = isSpark
-            ? (burst ? 160 + Math.random() * 240 : 65 + Math.random() * 110)
-            : (42 + Math.random() * 95);
+            ? (burst ? 140 + Math.random() * 200 : 60 + Math.random() * 95)
+            : (36 + Math.random() * 82);
         this.embers.push({
             x: ex + (Math.random() - 0.5) * this.canvasW * 0.05,
             y: ey + (Math.random() - 0.5) * this.canvasH * 0.025,
-            vx: Math.cos(angle) * speed + (leftEye ? -18 : 18),
-            vy: Math.sin(angle) * speed - (isSpark ? 20 : 48),
-            size: isSpark ? (2.0 + Math.random() * 3.5) : (16 + Math.random() * 26),
+            vx: Math.cos(angle) * speed + (leftEye ? -15 : 15),
+            vy: Math.sin(angle) * speed - (isSpark ? 18 : 42),
+            size: isSpark ? (1.8 + Math.random() * 3.0) : (14 + Math.random() * 22),
             life: 0,
-            maxLife: isSpark ? (0.35 + Math.random() * 0.45) : (0.45 + Math.random() * 0.55),
+            maxLife: isSpark ? (0.32 + Math.random() * 0.40) : (0.42 + Math.random() * 0.48),
             kind: isSpark ? 'spark' : 'eyeFlame',
         });
     }
@@ -287,13 +277,12 @@ export class DragonSensePressureFX {
         const ctx = this.ctx;
         ctx.clearRect(0, 0, this.canvasW, this.canvasH);
 
-        const spawnRate = (burstActive ? 75 : 28) * intensity;
+        const spawnRate = (burstActive ? 42 : 16) * intensity;
         let toSpawn = Math.floor(spawnRate * dt) + (Math.random() < (spawnRate * dt) % 1 ? 1 : 0);
         while (toSpawn-- > 0) {
             this.spawnEyeFlame(burstActive);
         }
 
-        // Draw flickering blood-flame wisps & crackling sparks around both eyes
         for (let i = this.embers.length - 1; i >= 0; i--) {
             const p = this.embers[i];
             p.life += dt;
@@ -305,24 +294,16 @@ export class DragonSensePressureFX {
             p.x += p.vx * dt;
             p.y += p.vy * dt;
             if (p.kind === 'eyeFlame') {
-                p.vx += Math.sin(this.elapsed * 9 + i) * 38 * dt;
-                p.vy -= 55 * dt;
-                const r = p.size * (0.7 + u * 0.9);
-                const alpha = Math.sin(u * Math.PI) * 0.52 * intensity;
-                const grad = ctx.createRadialGradient(p.x, p.y, r * 0.08, p.x, p.y, r);
-                grad.addColorStop(0.0, `rgba(255, 220, 165, ${alpha})`);
-                grad.addColorStop(0.35, `rgba(255, 52, 28, ${alpha * 0.85})`);
-                grad.addColorStop(0.75, `rgba(175, 6, 18, ${alpha * 0.42})`);
-                grad.addColorStop(1.0, 'rgba(90, 0, 8, 0)');
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-                ctx.fill();
+                p.vx += Math.sin(this.elapsed * 9 + i) * 32 * dt;
+                p.vy -= 48 * dt;
+                const r = p.size * (0.7 + u * 0.85);
+                ctx.globalAlpha = Math.sin(u * Math.PI) * 0.56 * intensity;
+                ctx.drawImage(this.emberSprite, p.x - r, p.y - r, r * 2, r * 2);
             } else {
                 p.vx *= Math.exp(-2.2 * dt);
                 p.vy *= Math.exp(-2.2 * dt);
-                const alpha = (1 - u) * 0.92 * intensity;
-                ctx.strokeStyle = `rgba(255, ${Math.floor(140 * (1 - u))}, 60, ${alpha})`;
+                ctx.globalAlpha = (1 - u) * 0.90 * intensity;
+                ctx.strokeStyle = '#ff6b3d';
                 ctx.lineWidth = p.size * (1 - u * 0.5);
                 ctx.beginPath();
                 ctx.moveTo(p.x, p.y);
@@ -330,22 +311,25 @@ export class DragonSensePressureFX {
                 ctx.stroke();
             }
         }
+        ctx.globalAlpha = 1;
     }
 
-    /** Fires the violent full-screen crimson dragon-eyes gaze + concentric shockwave backlash! */
+    /** Fires the full-screen crimson dragon-eyes gaze + concentric shockwave backlash! */
     triggerBacklash() {
         this.backlashAge = 0;
         this.smoothPressure = 1;
+        this.active = true;
         this.root.classList.add('active');
         this.ensureCanvasSize();
-        for (let i = 0; i < 28; i++) {
+        for (let i = 0; i < 18; i++) {
             this.spawnEyeFlame(true);
         }
         for (const ring of this.rings) {
             ring.classList.remove('fire');
-            void ring.offsetWidth;
-            ring.classList.add('fire');
         }
+        requestAnimationFrame(() => {
+            for (const ring of this.rings) ring.classList.add('fire');
+        });
     }
 
     update(dt: number, targetPressure: number) {
@@ -355,20 +339,25 @@ export class DragonSensePressureFX {
         const damp = targetPressure > this.smoothPressure ? 5.5 : 3.2;
         this.smoothPressure += (targetPressure - this.smoothPressure) * (1 - Math.exp(-damp * cdt));
         if (this.smoothPressure < 0.004 && this.backlashAge < 0) {
-            this.smoothPressure = 0;
-            this.embers.length = 0;
-            this.root.classList.remove('active');
+            if (this.active) {
+                this.active = false;
+                this.smoothPressure = 0;
+                this.embers.length = 0;
+                this.root.classList.remove('active');
+            }
             return;
         }
 
-        this.root.classList.add('active');
+        if (!this.active) {
+            this.active = true;
+            this.root.classList.add('active');
+        }
         const heartbeat = 0.86 + 0.14 * Math.sin(this.pulsePhase);
         const flicker = 0.88 + 0.12 * Math.sin(this.elapsed * 23.0) * Math.cos(this.elapsed * 13.7);
 
         let shroud = Math.min(1, this.smoothPressure * 1.05) * heartbeat;
-        let tint = Math.pow(this.smoothPressure, 1.15) * 0.72 * heartbeat;
         let gaze = Math.max(0, (this.smoothPressure - 0.48) / 0.52) * 0.38 * heartbeat;
-        let gazeScale = 1.16 - this.smoothPressure * 0.06;
+        let gazeScale = 1.15 - this.smoothPressure * 0.06;
         let eyeGlow = Math.max(0, (this.smoothPressure - 0.45) / 0.55) * 0.55 * flicker;
         let eyeScale = 0.92 + 0.16 * heartbeat;
         let flare = Math.max(0, (this.smoothPressure - 0.58) / 0.42) * 0.45 * flicker;
@@ -380,7 +369,6 @@ export class DragonSensePressureFX {
         let flash = 0;
         let shakeX = 0;
         let shakeY = 0;
-        let warpScale = this.smoothPressure * 14.0;
         let fxCanvas = gaze > 0.04 ? Math.min(1, gaze * 1.4) : 0;
 
         const burstActive = this.backlashAge >= 0;
@@ -393,59 +381,44 @@ export class DragonSensePressureFX {
                 const gazeAlpha = t < 0.08
                     ? t / 0.08
                     : t < 0.44
-                        ? 0.96
-                        : 0.96 * Math.pow(1 - (t - 0.44) / 0.56, 1.45);
+                        ? 0.95
+                        : 0.95 * Math.pow(1 - (t - 0.44) / 0.56, 1.45);
                 gaze = Math.max(gaze, gazeAlpha);
                 gazeScale = t < 0.16
-                    ? 1.25 - (t / 0.16) * 0.18
-                    : 1.07 - (t - 0.16) * 0.05;
-                eyeGlow = Math.max(eyeGlow, gazeAlpha * 1.08 * flicker);
-                eyeScale = 1.05 + (t < 0.2 ? (1 - t / 0.2) * 0.48 : 0.12 * Math.sin(this.elapsed * 16));
-                flare = Math.max(flare, gazeAlpha * (t < 0.25 ? 1.0 : 0.72) * flicker);
-                flareSx = t < 0.22 ? 1.35 + (1 - t / 0.22) * 0.9 : 1.05 + 0.22 * flicker;
-                flareSy = t < 0.22 ? 1.25 + (1 - t / 0.22) * 0.6 : 0.95;
-                flash = t < 0.22 ? Math.pow(1 - t / 0.22, 1.8) * 0.95 : 0;
+                    ? 1.22 - (t / 0.16) * 0.16
+                    : 1.06 - (t - 0.16) * 0.05;
+                eyeGlow = Math.max(eyeGlow, gazeAlpha * 1.05 * flicker);
+                eyeScale = 1.05 + (t < 0.2 ? (1 - t / 0.2) * 0.45 : 0.12 * Math.sin(this.elapsed * 16));
+                flare = Math.max(flare, gazeAlpha * (t < 0.25 ? 1.0 : 0.70) * flicker);
+                flareSx = t < 0.22 ? 1.32 + (1 - t / 0.22) * 0.8 : 1.04 + 0.20 * flicker;
+                flareSy = t < 0.22 ? 1.22 + (1 - t / 0.22) * 0.5 : 0.95;
+                flash = t < 0.20 ? Math.pow(1 - t / 0.20, 1.8) * 0.92 : 0;
                 shroud = Math.max(shroud, (1 - t) * 1.0);
-                tint = Math.max(tint, (1 - t) * 0.85);
                 fxCanvas = Math.max(fxCanvas, gazeAlpha);
 
-                // Dynamic spiritual distortion wave: intense shock ripple -> living blood heat-haze
-                const shockRipple = t < 0.35 ? Math.pow(1 - t / 0.35, 1.3) * 34 : 0;
-                warpScale = Math.max(warpScale, 11 + shockRipple + Math.sin(this.elapsed * 14) * 4.5);
-
-                // Chromatic soul-shock ghost split + concussion tremor during initial 0.7s
-                if (t < 0.32) {
-                    const amp = 1 - t / 0.32;
-                    ghost = amp * 0.55;
-                    splitX = Math.sin(this.elapsed * 55) * 18 * amp;
-                    splitY = Math.cos(this.elapsed * 42) * 8 * amp;
-                    shakeX = (Math.random() - 0.5) * 2 * (26 * amp);
-                    shakeY = (Math.random() - 0.5) * 2 * (26 * amp);
+                if (t < 0.30) {
+                    const amp = 1 - t / 0.30;
+                    ghost = amp * 0.52;
+                    splitX = Math.sin(this.elapsed * 55) * 16 * amp;
+                    splitY = Math.cos(this.elapsed * 42) * 7 * amp;
+                    shakeX = (Math.random() - 0.5) * 2 * (22 * amp);
+                    shakeY = (Math.random() - 0.5) * 2 * (22 * amp);
                 }
             }
         } else if (this.smoothPressure > 0.55) {
-            const amp = ((this.smoothPressure - 0.55) / 0.45) * 4.8;
+            const amp = ((this.smoothPressure - 0.55) / 0.45) * 4.5;
             shakeX = (Math.random() - 0.5) * 2 * amp;
             shakeY = (Math.random() - 0.5) * 2 * amp;
-            ghost = ((this.smoothPressure - 0.55) / 0.45) * 0.16 * heartbeat;
-            splitX = Math.sin(this.elapsed * 18) * 4.5;
-        }
-
-        // Animate SVG fractal noise frequency & displacement scale every frame for organic heat-haze warping!
-        if (this.turbEl && this.dispEl) {
-            const fx = 0.011 + 0.004 * Math.sin(this.elapsed * 2.7);
-            const fy = 0.020 + 0.006 * Math.cos(this.elapsed * 3.4);
-            this.turbEl.setAttribute('baseFrequency', `${fx.toFixed(4)} ${fy.toFixed(4)}`);
-            this.dispEl.setAttribute('scale', warpScale.toFixed(1));
+            ghost = ((this.smoothPressure - 0.55) / 0.45) * 0.15 * heartbeat;
+            splitX = Math.sin(this.elapsed * 18) * 4.0;
         }
 
         if (fxCanvas > 0.02) {
-            this.stepCanvasFx(cdt, fxCanvas, burstActive && this.backlashAge < 0.9);
+            this.stepCanvasFx(cdt, fxCanvas, burstActive && this.backlashAge < 0.85);
         }
 
         const st = this.root.style;
         st.setProperty('--dp-shroud', shroud.toFixed(3));
-        st.setProperty('--dp-tint', tint.toFixed(3));
         st.setProperty('--dp-gaze', gaze.toFixed(3));
         st.setProperty('--dp-gaze-scale', gazeScale.toFixed(4));
         st.setProperty('--dp-eye', eyeGlow.toFixed(3));

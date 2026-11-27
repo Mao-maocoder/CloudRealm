@@ -559,7 +559,6 @@ export class Game {
                         this.dragonGravityPressure.trigger(this.dragonSuppressionAnchor, 3.2);
                         this.dragonBoss.triggerRealmSuppression(this.dragonSuppressionAnchor);
                         this.audio.playDragonSenseBacklash();
-                        this.audio.playDragonRoar();
                         this.vitals.announce(
                             `境界不足元婴 · 遭【${DragonBoss.REALM_LABEL}】古龙重力威压镇压，动弹不得！`,
                             this.time,
@@ -858,7 +857,7 @@ export class Game {
             })));
             if (this.disposed) return;
             // Pre-compile all base hotbar skill shaders (small/nascent fireball, impact, seals, sword array, wind) behind the welcome screen
-            const baseWarm: T.Object3D[] = [...this.fireball.warmObjects];
+            const baseWarm: T.Object3D[] = [...this.fireball.warmObjects, ...this.dragonGravityPressure.warmObjects];
             if (this.swordEffects.windMesh) baseWarm.push(this.swordEffects.windMesh);
             await this.warmSkillObjects(baseWarm);
             const sword = this.player.avatar.swordMotion;
@@ -1084,9 +1083,14 @@ export class Game {
     }
 
     private readonly frame = (stamp: number) => {
+        if (this.paused) {
+            this.last = stamp;
+            return;
+        }
+        // Cap render loop to ~60 FPS so 144Hz/165Hz/240Hz gaming laptops don't spin fans at 100% GPU while idle.
+        if (this.last && stamp - this.last < 15.6) return;
         const raw = this.last ? (stamp - this.last) / 1000 : 1 / 60;
         this.last = stamp;
-        if (this.paused) return;
         // Never burn 100% GPU rendering the 3D valley at 60 FPS behind the opaque Welcome loading screen!
         // This keeps the loading bar & spinner completely smooth and speeds up asset loading/parsing.
         if (!this.hud.started) return;

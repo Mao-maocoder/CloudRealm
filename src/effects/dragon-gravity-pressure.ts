@@ -294,6 +294,10 @@ export class DragonGravityPressureFX {
         return this.active;
     }
 
+    get warmObjects(): readonly T.Object3D[] {
+        return [this.group];
+    }
+
     trigger(groundPos: T.Vector3, duration = 3.2) {
         this.active = true;
         this.age = 0;
