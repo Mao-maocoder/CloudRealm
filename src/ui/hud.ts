@@ -337,6 +337,10 @@ export class HUD {
         <img class="util-btn-bg" src="${toolbarButtonSvg}" alt="" aria-hidden="true"/>
         <svg class="util-btn-ico" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm14-3h-3V4h5v5h-2V6zM6 15v3h3v2H4v-5h2zm12 3v-3h2v5h-5v-2h3z" fill="currentColor"/></svg>
       </button>
+      <button class="util-btn" id="audio-toggle" title="切换背景音乐与音效" aria-label="切换背景音乐与音效">
+        <img class="util-btn-bg" src="${toolbarButtonSvg}" alt="" aria-hidden="true"/>
+        <svg class="util-btn-ico" id="audio-toggle-ico" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
+      </button>
       <button class="util-btn" id="settings" title="画质与设置" aria-label="画质与设置">
         <img class="util-btn-bg" src="${toolbarButtonSvg}" alt="" aria-hidden="true"/>
         <svg class="util-btn-ico" viewBox="0 0 24 24"><path d="M19.4 13a7.7 7.7 0 0 0 .1-1 7.7 7.7 0 0 0-.1-1l2-1.5-1.9-3.3-2.3.9a7.4 7.4 0 0 0-1.7-1L15.1 3h-3.8l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.3-.9L5 8.9 7 10.4a7.7 7.7 0 0 0-.1 1c0 .3 0 .7.1 1l-2 1.5 1.9 3.3 2.3-.9c.5.4 1.1.8 1.7 1l.4 2.5h3.8l.4-2.5c.6-.2 1.2-.6 1.7-1l2.3.9 1.9-3.3-2-1.5zM13.2 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z" fill="currentColor"/></svg>

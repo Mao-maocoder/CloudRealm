@@ -14,6 +14,7 @@ import { VoidFlightEffects } from '../effects/void-flight';
 import { CelestialOmen } from '../effects/celestial-omen';
 import { NascentBreakthrough } from '../effects/nascent-breakthrough';
 import { DivineSense } from '../effects/divine-sense';
+import { DragonSensePressureFX } from '../effects/dragon-sense-pressure';
 import { Atmosphere } from '../environment/atmosphere';
 import { formatShichen } from '../environment/day-night';
 import { FollowCamera } from '../player/camera';
@@ -22,12 +23,15 @@ import { xpForCreatureDefeat } from '../player/cultivation';
 import { Input } from '../player/input';
 import { PlayerVitals } from '../player/vitals';
 import { HUD } from '../ui/hud';
+import { BossHealthBar } from '../ui/boss-health-bar';
+import { AudioManager } from '../audio/audio-manager';
 import { TouchControls } from '../ui/touch-controls';
 import { mobileLayout } from '../ui/mobile-layout';
 import { welcome } from '../ui/welcome';
 import { WorldMap } from '../ui/world-map';
 import { BridgeGrove } from '../world/biomes/bridge-grove';
 import { BossTerritories } from '../world/biomes/boss-territories';
+import { DragonBoss } from '../world/biomes/dragon-boss';
 import { bossTerritoryAt } from '../world/geo/boss-territories';
 import { bridgeReflectionLayer } from '../world/geo/bridge-look';
 import { buildingViewTarget } from '../world/biomes/building-layout';
@@ -69,8 +73,12 @@ export class Game {
     readonly atmosphere: Atmosphere;
     readonly bridgeGrove: BridgeGrove;
     readonly bossTerritories: BossTerritories;
+    readonly dragonBoss: DragonBoss;
     readonly forestClearing: ForestClearing;
     readonly hud: HUD;
+    readonly bossHealthBar: BossHealthBar;
+    readonly audio: AudioManager;
+    private dragonPressureLive = 0;
     readonly touchControls: TouchControls;
     readonly expansion: MapExpansion;
     readonly worldMap: WorldMap;
@@ -80,6 +88,9 @@ export class Game {
     readonly celestialOmen: CelestialOmen;
     readonly nascentBreakthrough: NascentBreakthrough;
     readonly divineSense: DivineSense;
+    readonly dragonSensePressure: DragonSensePressureFX;
+    private dragonBacklashCooldownUntil = 0;
+    private dragonPressureWarned = false;
     readonly meadow: Meadow;
     readonly wildlife: Wildlife;
     readonly vitals = new PlayerVitals();
@@ -145,6 +156,7 @@ export class Game {
         }
         const origin = this.player.position;
         this.divineSense.openSense(origin, stats.senseRadius, stats.realmColor);
+        this.audio.playDivineSensePulse();
         this.senseSweepTimer = 0;
         const report = this.wildlife.applyDivineSensePulse(
             origin,
@@ -183,6 +195,7 @@ export class Game {
             this.player.position.z,
         );
         this.divineSense.enterAstral(seatPos, this.player.heading, stats.senseRadius, stats.realmColor);
+        this.audio.playAstralToggle(true);
         const startCam = this.camera.position.clone();
         startCam.y = Math.max(startCam.y, seatPos.y + 3.2);
         this.follow.beginAstral(startCam);
@@ -203,6 +216,7 @@ export class Game {
     private exitAstralProjection(notice?: string) {
         if (!this.divineSense.astralActive) return;
         this.divineSense.exitAstral();
+        this.audio.playAstralToggle(false);
         this.follow.endAstral();
         this.player.position.copy(this.divineSense.bodyPosition);
         this.player.velocity.set(0, 0, 0);
@@ -316,6 +330,7 @@ export class Game {
     private triggerBreakthrough() {
         const prevRealm = this.vitals.realmIndex;
         if (this.vitals.attemptBreakthrough(this.time)) {
+            this.audio.playBreakthrough();
             this.syncFlightProfile();
             if (prevRealm < 3 && this.vitals.realmIndex === 3) {
                 this.startNascentBreakthroughCeremony();
@@ -337,18 +352,41 @@ export class Game {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = this.device.isMobile || this.quality === 'low' ? T.PCFShadowMap : T.PCFSoftShadowMap;
 
-        this.swordEffects = new SwordEffects(this.scene, (from, to, struck) => this.wildlife.swordTravel(from, to, struck));
+        this.swordEffects = new SwordEffects(this.scene, (from, to, struck) => {
+            this.wildlife.swordTravel(from, to, struck);
+            this.dragonBoss?.swordTravel(from, to, struck);
+        });
         this.fireball = new Fireball(
             this.scene,
             sampleSurfaceMaterial,
-            (from, to) => this.wildlife.fireballContact(from, to),
-            (point, power, directHit, radiusScale) => this.wildlife.fireballBlast(point, power, directHit, radiusScale),
+            (from, to) => {
+                const w = this.wildlife.fireballContact(from, to);
+                const d = this.dragonBoss?.fireballContact(from, to);
+                if (w === undefined) return d;
+                if (d === undefined) return w;
+                return Math.min(w, d);
+            },
+            (point, power, directHit, radiusScale) => {
+                this.audio.playFireballImpact(power);
+                this.wildlife.fireballBlast(point, power, directHit, radiusScale);
+                this.dragonBoss?.fireballBlast(point, power, directHit, radiusScale);
+            },
         );
         this.giantSword = new GiantSword(
             this.scene,
             sampleSurfaceMaterial,
-            (from, to) => this.wildlife.giantSwordContact(from, to),
-            (point, directHit) => this.wildlife.giantSwordBlast(point, directHit),
+            (from, to) => {
+                const w = this.wildlife.giantSwordContact(from, to);
+                const d = this.dragonBoss?.giantSwordContact(from, to);
+                if (w === undefined) return d;
+                if (d === undefined) return w;
+                return Math.min(w, d);
+            },
+            (point, directHit) => {
+                this.audio.playGiantSwordImpact();
+                this.wildlife.giantSwordBlast(point, directHit);
+                this.dragonBoss?.giantSwordBlast(point, directHit, giantSwordSplashRadius);
+            },
             giantSwordSplashRadius,
         );
         this.input = new Input(this.renderer.domElement);
@@ -359,7 +397,11 @@ export class Game {
                 console.error('剑阵素材播放失败', error);
                 this.hud.showHint('剑阵素材播放失败 · 按 Q 可重试');
             },
-            sword => this.wildlife.rainContact(sword),
+            sword => {
+                this.audio.playSwordRainHit();
+                this.wildlife.rainContact(sword);
+                this.dragonBoss?.rainContact(sword);
+            },
         );
         this.player = new Player(
             this.input,
@@ -367,10 +409,20 @@ export class Game {
             (position, heading) => {
                 const senseOn = this.divineSense?.insightActive ?? false;
                 const lockRange = senseOn ? Math.max(swordWaveRange, this.vitals.stats.senseLockRange * 0.65) : swordWaveRange;
-                this.swordEffects.release(position, heading, this.wildlife.swordTarget(position, heading, lockRange, senseOn));
+                const target = this.wildlife.swordTarget(position, heading, lockRange, senseOn)
+                    ?? this.dragonBoss?.swordTarget(position, heading, lockRange, senseOn);
+                this.audio.playSwordWave();
+                this.swordEffects.release(position, heading, target);
             },
-            position => this.swordArray.start(position),
-            (position, heading) => this.wildlife.melee(position, heading),
+            position => {
+                this.audio.playSwordArrayStart();
+                this.swordArray.start(position);
+            },
+            (position, heading) => {
+                this.audio.playMeleeSlash();
+                this.wildlife.melee(position, heading);
+                this.dragonBoss?.melee(position, heading);
+            },
             (position, previous, velocity) => this.wildlife.simulation.resolvePlayer(position, previous, velocity),
             power => { this.fireballPower = power; },
             {
@@ -392,10 +444,45 @@ export class Game {
         this.terrain = new Terrain(this.scene, this.quality);
         this.atmosphere = new Atmosphere(this.scene, this.quality);
         this.bridgeGrove = new BridgeGrove(this.atmosphere.sunDirection, this.terrain.vegetation.uniforms);
+        this.audio = new AudioManager();
+        const unlockAudio = () => this.audio.unlock();
+        window.addEventListener('pointerdown', unlockAudio, { passive: true });
+        window.addEventListener('keydown', unlockAudio, { passive: true });
+
         this.bossTerritories = new BossTerritories(this.scene);
+        this.dragonBoss = new DragonBoss(
+            this.scene,
+            (x, z) => this.player.floor(x, z),
+            this.renderer.getPixelRatio(),
+            {
+                onDamagePlayer: (rawDamage, attackLabel) => {
+                    const hit = this.vitals.receiveHit(rawDamage, attackLabel, this.time);
+                    if (hit && this.divineSense.astralActive) {
+                        this.exitAstralProjection('本体遇袭 · 神识骤归！');
+                    }
+                    if (hit) {
+                        this.audio.playPlayerHit();
+                        this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+                    }
+                },
+                damageMultiplier: () => this.vitals.rollDamageScale(),
+                onDefeat: bossName => {
+                    this.vitals.gainXp(3600, this.time, `斩杀【${bossName}】`);
+                    this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+                },
+                onSfx: kind => {
+                    if (kind === 'roar') this.audio.playDragonRoar();
+                    else if (kind === 'impact') this.audio.playDragonImpact();
+                    else if (kind === 'breath') this.audio.playDragonFireBreath();
+                    else if (kind === 'wing') this.audio.playDragonWingFlap();
+                },
+            },
+        );
+        this.bossHealthBar = new BossHealthBar();
         this.forestClearing = new ForestClearing(this.atmosphere.sunDirection, this.terrain.vegetation.uniforms);
         this.scene.add(this.bridgeGrove, this.forestClearing);
         void this.bossTerritories.load();
+        void this.dragonBoss.load();
         this.terrain.lod.mesh.layers.enable(bridgeReflectionLayer);
         this.scene.traverse(object => {
             if (object instanceof T.Light) object.layers.enable(bridgeReflectionLayer);
@@ -406,6 +493,7 @@ export class Game {
         this.celestialOmen = new CelestialOmen(this.scene, this.quality);
         this.nascentBreakthrough = new NascentBreakthrough(this.scene);
         this.divineSense = new DivineSense(this.scene);
+        this.dragonSensePressure = new DragonSensePressureFX();
         if (this.vitals.realmIndex >= 2) {
             void this.ensureNascentAssetsLoaded();
         }
@@ -466,11 +554,15 @@ export class Game {
         );
         this.hud.bindActions(
             () => this.worldMap.toggle(),
-            kind => this.vitals.useItem(kind, this.time),
+            kind => {
+                this.vitals.useItem(kind, this.time);
+                this.audio.playItemUse(kind);
+            },
             held => this.input.setHeld('KeyE', held),
             () => this.input.trigger('KeyQ'),
             () => this.input.trigger('Digit1'),
         );
+        this.audio.bindToggleButton();
         this.hud.bindCultivation(
             () => {
                 this.triggerBreakthrough();
@@ -972,6 +1064,7 @@ export class Game {
         this.fireball.update(dt);
         this.fireball.updateSeals(avatar.fireballHead, avatar.fireballTime, heading, this.player.fireballPower, isNascent);
         if (this.fireballPower !== undefined) {
+            this.audio.playFireballRelease(this.fireballPower);
             this.vitals.spendFireballCharge(this.fireballPower, this.time);
             this.fireball.release(
                 this.camera,
@@ -1106,6 +1199,75 @@ export class Game {
 
         this.terrain.update(center, detachedCam ? this.zeroVelocity : this.player.velocity, this.camera);
         this.bossTerritories.update(dt);
+        this.dragonBoss.update(dt, this.player.position);
+        this.bossHealthBar.update(dt, this.dragonBoss.getHealthBarState(this.player.position));
+
+        // Ancient Dragon (元婴后期) Divine Sense blood-red oppression & backlash:
+        // ONLY active during Astral Projection (神识离体, G) so pressing Z for Divine Sense lock-on is never interrupted!
+        const senseProbing = this.divineSense.astralActive && !this.nascentBreakthrough.active;
+        if (senseProbing) {
+            const probePos = this.camera.position;
+            const aura = this.dragonBoss.evaluateDivineSensePressure(
+                probePos,
+                this.vitals.realmIndex,
+                this.vitals.stageIndex,
+            );
+            this.dragonPressureLive = aura.pressure;
+            this.dragonSensePressure.update(dt, aura.pressure);
+
+            if (aura.pressure > 0.35 && !this.dragonPressureWarned && this.time >= this.dragonBacklashCooldownUntil) {
+                this.dragonPressureWarned = true;
+                this.vitals.announce(
+                    `神识感应到【${DragonBoss.REALM_LABEL}】古龙血煞威压 · 切勿贸然探入领地！`,
+                    this.time,
+                    3.0,
+                );
+            } else if (aura.pressure < 0.12) {
+                this.dragonPressureWarned = false;
+            }
+
+            if (aura.triggeredBacklash && this.time >= this.dragonBacklashCooldownUntil) {
+                this.dragonBacklashCooldownUntil = this.time + 5.0;
+                this.dragonPressureWarned = false;
+                this.dragonSensePressure.triggerBacklash();
+                this.audio.playDragonSenseBacklash();
+                this.divineSense.notifyCounterAlert();
+                if (this.divineSense.astralActive) {
+                    this.exitAstralProjection();
+                }
+                this.divineSense.closeSense();
+                this.vitals.applyDivineSenseBacklash(
+                    0.50,
+                    0.72,
+                    this.time,
+                    `遭【${DragonBoss.REALM_LABEL}】古龙神识反噬！神识受创强行归位 · 气血重创过半，灵力溃散大半！`,
+                );
+                this.hud.updateVitals(this.vitals.snapshot(), this.vitals.activeNotice(this.time));
+            }
+        } else {
+            this.dragonPressureLive = 0;
+            this.dragonPressureWarned = false;
+            this.dragonSensePressure.update(dt, 0);
+        }
+
+        // Update unified BGM, surface-aligned footsteps (grass / soil / water / stone), flight wind & Boss audio
+        const playerSurface = sampleSurfaceMaterial(
+            this.player.position.x,
+            this.player.position.z,
+            this.player.position.y + 0.6,
+        ).kind;
+        this.audio.update(dt, {
+            grounded: this.player.grounded,
+            horizontalSpeed: Math.hypot(this.player.velocity.x, this.player.velocity.z),
+            verticalVelocity: this.player.velocity.y,
+            flying: this.player.flying,
+            voidFlying: this.player.voidFlying,
+            boosting: this.player.boosting,
+            surface: playerSurface,
+            bossCombat: this.dragonBoss.inCombat,
+            dragonPressure: this.dragonPressureLive,
+            paused: this.paused || !this.hud.started,
+        });
         this.geographyDebug.update();
         this.worldMap.update(avatar.position, senseOverlay.mapBlips, senseRing);
         this.celestialOmen.update(dt, center, this.renderer.getPixelRatio(), this.camera.position.y);
@@ -1296,6 +1458,9 @@ export class Game {
         this.expansion.dispose();
         this.bridgeGrove.dispose();
         this.bossTerritories.dispose();
+        this.dragonBoss.dispose();
+        this.bossHealthBar.dispose();
+        this.audio.dispose();
         this.forestClearing.dispose();
         this.terrain.dispose();
         this.atmosphere.dispose();
@@ -1306,6 +1471,7 @@ export class Game {
         this.celestialOmen.dispose();
         this.nascentBreakthrough.dispose();
         this.divineSense.dispose();
+        this.dragonSensePressure.dispose();
         this.swordArray.dispose();
         this.fireball.dispose();
         this.giantSword.dispose();

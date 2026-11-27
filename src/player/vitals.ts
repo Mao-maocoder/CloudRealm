@@ -193,6 +193,19 @@ export class PlayerVitals {
         return true;
     }
 
+    /** Applies heavy cultivation Divine Sense backlash (direct % MaxHP & % MaxMP loss, non-lethal floor 1 HP). */
+    applyDivineSenseBacklash(hpRatio: number, mpRatio: number, now: number, notice?: string) {
+        const hpLoss = Math.round(this.stats.maxHp * MathUtils.clamp(hpRatio, 0, 0.95));
+        const mpLoss = Math.round(this.stats.maxMp * MathUtils.clamp(mpRatio, 0, 1));
+        this.hp = Math.max(1, this.hp - hpLoss);
+        this.mp = Math.max(0, this.mp - mpLoss);
+        this.lastInjury = now;
+        this.lastCastTime = now;
+        if (notice) {
+            this.announce(notice, now, 4.2);
+        }
+    }
+
     /** Rolls player outgoing damage multiplier (ATK ratio × optional critical hit 1.5x). */
     rollDamageScale(): { scale: number; crit: boolean } {
         const crit = Math.random() < this.stats.critRate;

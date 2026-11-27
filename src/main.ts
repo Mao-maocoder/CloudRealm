@@ -16,6 +16,7 @@ void import('./app/game').then(async ({ Game }) => {
             void import('./dev/meadow-lab').then(m => m.openMeadowLab(game, view));
     }
     import.meta.hot?.dispose(() => game.dispose());
+    import.meta.hot?.accept(() => location.reload());
 }).catch(error => {
     console.error('云境场景初始化失败', error);
     welcome.fail('场景初始化失败，请刷新页面');
