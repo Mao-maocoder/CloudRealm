@@ -1,9 +1,7 @@
-import { detectDevice } from '../config/device';
 import type { Quality } from '../config/settings';
 import type { VitalsSnapshot } from '../player/vitals';
 import { REALMS, SKILL_MANA_COST } from '../player/cultivation';
 import type { SenseDangerIndicator, SenseMarkerProjection } from '../world/wildlife/wildlife';
-import { mobileLayout } from './mobile-layout';
 import { welcome } from './welcome';
 import locationTitleSvg from './assets/hud-svg/location-title.svg';
 import compassSvg from './assets/hud-svg/compass.svg';
@@ -336,10 +334,6 @@ export class HUD {
 
   <div class="top-right-cluster">
     <div class="utility-btns">
-      <button class="util-btn mobile-only-btn" id="fullscreen-btn" title="切换全屏 / 横屏" aria-label="切换全屏或横屏">
-        <img class="util-btn-bg" src="${toolbarButtonSvg}" alt="" aria-hidden="true"/>
-        <svg class="util-btn-ico" viewBox="0 0 24 24"><path d="M4 9V4h5v2H6v3H4zm14-3h-3V4h5v5h-2V6zM6 15v3h3v2H4v-5h2zm12 3v-3h2v5h-5v-2h3z" fill="currentColor"/></svg>
-      </button>
       <button class="util-btn" id="audio-toggle" title="切换背景音乐与音效" aria-label="切换背景音乐与音效">
         <img class="util-btn-bg" src="${toolbarButtonSvg}" alt="" aria-hidden="true"/>
         <svg class="util-btn-ico" id="audio-toggle-ico" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
@@ -560,15 +554,6 @@ export class HUD {
         this.hintEl = el('hint');
         this.crosshairEl = el('crosshair');
         this.rollInput = el<HTMLInputElement>('roll');
-
-        if (detectDevice().isMobile || (typeof window !== 'undefined' && window.innerWidth <= 860)) {
-            el('char-card').classList.add('compact');
-            this.testBarBody.classList.add('hidden');
-            el('realm-test-toggle').textContent = '测试 · 一键切境 ▸';
-        }
-        el('fullscreen-btn').onclick = () => {
-            void mobileLayout.toggleFullscreenLandscape();
-        };
 
         this.slots = [
             { id: 'fireball', label: '火球术', key: 'E', cost: SKILL_MANA_COST.fireball, icon: iconFireballImg, kind: 'skill', title: `按住蓄力、松开释放火球术 (E · 消耗 ${SKILL_MANA_COST.fireball} 灵力)`, onHoldChange: held => this.onFireballHold?.(held) },

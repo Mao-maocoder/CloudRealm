@@ -14,23 +14,15 @@ let cachedProfile: DeviceProfile | undefined;
 
 export function detectDevice(): DeviceProfile {
     if (cachedProfile) return cachedProfile;
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    if (typeof navigator === 'undefined') {
         cachedProfile = { isMobile: false, isTouch: false, isIOS: false, lowMemory: false, maxTextureSizeCap: 4096 };
         return cachedProfile;
     }
-    const ua = navigator.userAgent || '';
-    const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
-    const mobileUA = /Android|iPhone|iPad|iPod|Mobile|HarmonyOS|OpenHarmony|MiuiBrowser|UCBrowser|QQBrowser|MicroMessenger|Quark|SamsungBrowser|XiaoMi|HUAWEI|HONOR|OPPO|vivo/i.test(ua);
-    const ipadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-    const isIOS = /iPhone|iPad|iPod/i.test(ua) || ipadOS;
-    const isTouch = coarse || navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
-    const shortEdge = Math.min(window.innerWidth || 9999, window.innerHeight || 9999);
-    const isMobile = mobileUA || ipadOS || (isTouch && shortEdge <= 960);
     const navMem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-    const cores = navigator.hardwareConcurrency ?? 8;
-    const lowMemory = isMobile || (navMem !== undefined && navMem <= 4) || cores <= 4;
-    const maxTextureSizeCap = isMobile ? 1024 : lowMemory ? 2048 : 4096;
-    cachedProfile = { isMobile, isTouch, isIOS, lowMemory, maxTextureSizeCap };
+    const lowMemory = navMem !== undefined && navMem <= 4;
+    const maxTextureSizeCap = lowMemory ? 2048 : 4096;
+    // Desktop-only build: never misclassify touchscreen laptops or high-DPI screens as mobile.
+    cachedProfile = { isMobile: false, isTouch: false, isIOS: false, lowMemory, maxTextureSizeCap };
     return cachedProfile;
 }
 

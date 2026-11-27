@@ -26,8 +26,6 @@ import { PlayerVitals } from '../player/vitals';
 import { HUD } from '../ui/hud';
 import { BossHealthBar } from '../ui/boss-health-bar';
 import { AudioManager } from '../audio/audio-manager';
-import { TouchControls } from '../ui/touch-controls';
-import { mobileLayout } from '../ui/mobile-layout';
 import { welcome } from '../ui/welcome';
 import { WorldMap } from '../ui/world-map';
 import { BridgeGrove } from '../world/biomes/bridge-grove';
@@ -80,7 +78,6 @@ export class Game {
     readonly bossHealthBar: BossHealthBar;
     readonly audio: AudioManager;
     private dragonPressureLive = 0;
-    readonly touchControls: TouchControls;
     readonly expansion: MapExpansion;
     readonly worldMap: WorldMap;
     readonly surfaceWake: SurfaceWake;
@@ -126,7 +123,7 @@ export class Game {
     frameMs = 0;
 
     private readonly itemKey = (e: KeyboardEvent) => {
-        if (mobileLayout.blocked || !this.hud.started || this.worldMap.open || (e.target instanceof HTMLElement && e.target.matches('input,select,textarea'))) return;
+        if (!this.hud.started || this.worldMap.open || (e.target instanceof HTMLElement && e.target.matches('input,select,textarea'))) return;
         if (e.code === 'Escape' && !e.repeat && this.nascentBreakthrough.active) {
             this.skipBreakthroughCeremony();
             return;
@@ -606,7 +603,6 @@ export class Game {
 
         this.hud = new HUD(
             () => {
-                this.touchControls.setVisible(true);
                 this.capture();
             },
             q => this.setQuality(q),
@@ -621,7 +617,6 @@ export class Game {
             },
             this.quality,
         );
-        this.touchControls = new TouchControls(this.input);
         this.expansion = new MapExpansion(this.scene);
         this.expansion.setWind(this.terrain.vegetation.uniforms);
         this.wildlife = new Wildlife(
@@ -715,10 +710,6 @@ export class Game {
             () => this.toggleAstralProjection(),
         );
         this.hud.bindPressure(() => this.triggerNascentPressure());
-        this.touchControls.bindDivineSense(
-            () => this.triggerDivineSensePulse(),
-            () => this.toggleAstralProjection(),
-        );
         this.hud.updateVitals(this.vitals.snapshot(), '');
         this.hud.bindTimeControl(
             hours => this.atmosphere.dayNight.setHours(hours),
@@ -993,7 +984,6 @@ export class Game {
     }
 
     private readonly capture = (e?: MouseEvent) => {
-        if (this.device.isTouch && !window.matchMedia?.('(pointer: fine)').matches) return;
         if (this.hud.started && !this.paused && !this.input.cursorFree && !e?.altKey) {
             this.renderer.domElement.requestPointerLock?.()?.catch(() => {
                 this.hud.showHint('鼠标捕获不可用 · 按住右键转动视角 · Alt / Esc 释放鼠标');
@@ -1020,7 +1010,6 @@ export class Game {
         this.hud.started = true;
         welcome.hide();
         this.hud.setCrosshairVisible(true);
-        this.touchControls.setVisible(true);
     }
 
     private returnToValley() {
@@ -1050,10 +1039,9 @@ export class Game {
     };
 
     private readonly visibility = () => {
-        this.paused = document.hidden || mobileLayout.blocked;
+        this.paused = document.hidden;
         this.swordArray.setPaused(this.paused);
         this.input.clear();
-        if (this.paused) this.touchControls.setVisible(false);
         this.last = 0;
         this.accumulator = 0;
     };
@@ -1159,8 +1147,6 @@ export class Game {
 
         const { avatar, heading } = this.player;
         const canInteract = this.hud.started && !this.follow.free && !this.divineSense.astralActive && !this.worldMap.open && !this.nascentBreakthrough.active && !inSuppressed;
-        this.touchControls.setVisible(canInteract || (this.hud.started && this.divineSense.astralActive && !this.worldMap.open));
-        this.touchControls.syncState(this.player.flying, this.player.boosting, this.divineSense.insightActive, this.divineSense.astralActive);
 
         this.swordArray.updateCharge(dt, avatar.raisingSwordTime);
         this.swordArray.update(dt);
@@ -1573,7 +1559,6 @@ export class Game {
         this.renderer.domElement.removeEventListener('click', this.capture);
         this.renderer.domElement.removeEventListener('webglcontextlost', this.contextLost);
         this.input.dispose();
-        this.touchControls.dispose();
         this.worldMap.dispose();
         this.wildlife.dispose();
         this.meadow.dispose();

@@ -1,5 +1,3 @@
-import { mobileLayout } from './mobile-layout';
-
 const screen = document.querySelector<HTMLElement>('#welcome')!;
 const button = screen.querySelector<HTMLButtonElement>('#start')!;
 const loading = screen.querySelector<HTMLElement>('.welcome-loading')!;
@@ -23,15 +21,11 @@ export const welcome = {
     },
     bind(onStart: () => void) {
         button.onclick = () => {
-            if (mobileLayout.isMobile && mobileLayout.isPortrait) {
-                void mobileLayout.requestLandscapeFullscreen(false);
-            }
             onStart();
         };
     },
     hide() {
         screen.hidden = true;
-        mobileLayout.sync();
     },
     setStatus(message: string) {
         if (screen.dataset.state === 'loading') status.textContent = message;

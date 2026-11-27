@@ -1,6 +1,5 @@
 import './ui/style.css';
 import './ui/readability.css';
-import './ui/mobile-layout.css';
 import { welcome } from './ui/welcome';
 
 void import('./app/game').then(async ({ Game }) => {
