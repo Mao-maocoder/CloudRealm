@@ -54,7 +54,7 @@ function videoClip(url: URL, loop: boolean, supported: boolean) {
     const video = document.createElement('video');
     video.muted = video.defaultMuted = true;
     video.playsInline = true;
-    video.preload = !supported || detectDevice().isMobile ? 'none' : 'metadata';
+    video.preload = supported ? 'auto' : 'none';
     video.loop = loop;
     if (supported) video.src = url.href;
     const texture = new T.VideoTexture(video);
@@ -414,6 +414,7 @@ export class SwordArray {
     private phase?: ReturnType<typeof videoClip>;
     private playback = 0;
     private loopAge = 0;
+    private elapsedAge = 0;
     private paused = false;
     private groundY = 0;
     private currentOpacity = 0;
@@ -498,14 +499,8 @@ export class SwordArray {
     get framing() {
         if (this.nascent.isActive) return this.nascent.framing;
         if (!this.group.visible) return;
-        if (this.proceduralMode) {
-            if (this.proceduralTime > 5.8) return;
-            const weight = T.MathUtils.smoothstep(this.proceduralTime, 0, .74) * (1 - T.MathUtils.smoothstep(this.proceduralTime, 4.4, 5.65));
-            if (weight > 0) return { center: this.group.position, weight, radius: formationWidth * .44 };
-            return;
-        }
-        if (this.videoMaterial.map !== this.opening.texture) return;
-        const time = this.opening.video.currentTime;
+        const time = this.proceduralMode ? this.proceduralTime : this.elapsedAge;
+        if (time > 5.8) return;
         const weight = T.MathUtils.smoothstep(time, 0, .74) * (1 - T.MathUtils.smoothstep(time, 4.4, 5.65));
         if (weight > 0) return { center: this.group.position, weight, radius: formationWidth * .44 };
     }
@@ -522,16 +517,20 @@ export class SwordArray {
         this.group.position.y += formationHeight;
         this.sampleBeamOrigin = true;
         this.burstAge = 0;
+        this.elapsedAge = 0;
         this.mesh.scale.setScalar(.18);
+        this.group.visible = true;
         if (this.proceduralMode) {
             this.mesh.material = this.fallbackMaterial;
             this.proceduralTime = 0;
             this.fallbackMaterial.uniforms.uOpacity.value = 0;
-            this.group.visible = true;
             return;
         }
-        this.mesh.material = this.videoMaterial;
+        // Show the instant procedural shader while the WebM buffers so cast has zero delay
+        const videoReady = this.opening.video.readyState >= this.opening.video.HAVE_CURRENT_DATA;
+        this.mesh.material = videoReady ? this.videoMaterial : this.fallbackMaterial;
         this.videoMaterial.opacity = 0;
+        this.fallbackMaterial.uniforms.uOpacity.value = 0;
         this.phase = this.opening;
         this.opening.video.currentTime = 0;
         if (this.loop.video.preload === 'none') this.loop.video.preload = 'auto';
@@ -550,10 +549,10 @@ export class SwordArray {
         if (!phase || this.paused) return;
         const playback = ++this.playback;
         void phase.video.play().then(() => {
-            if (playback !== this.playback) return;
+            if (playback !== this.playback || !this.group.visible) return;
             this.videoMaterial.map = phase.texture;
+            this.mesh.material = this.videoMaterial;
             if (phase === this.loop) this.mesh.scale.setScalar(1);
-            this.group.visible = true;
         }, () => {
             if (playback !== this.playback) return;
             // Seamlessly switch to procedural shader array if WebM playback fails on this browser.
@@ -632,34 +631,29 @@ export class SwordArray {
             if (this.tip) this.tip.getWorldPosition(this.beamOrigin).sub(this.group.position);
         }
         if (!this.group.visible) return;
-        let time = 0;
-        let opacity = 1;
-        if (this.proceduralMode) {
-            if (!this.paused) this.proceduralTime += dt;
-            const totalDuration = 6 + loopDuration;
-            if (this.proceduralTime >= totalDuration) {
-                this.clear();
-                return;
-            }
-            time = this.proceduralTime;
-            opacity = time < 6 ? T.MathUtils.smoothstep(time, 0, .24)
-                : T.MathUtils.clamp((totalDuration - time) / .7, 0, 1);
+        const totalDuration = 6 + loopDuration;
+        if (!this.paused) this.elapsedAge += dt;
+        if (this.elapsedAge >= totalDuration) {
+            this.clear();
+            return;
+        }
+        const time = this.elapsedAge;
+        const opacity = time < 6
+            ? T.MathUtils.smoothstep(time, 0, .24)
+            : T.MathUtils.clamp((totalDuration - time) / .7, 0, 1);
+
+        if (this.proceduralMode || this.mesh.material === this.fallbackMaterial) {
+            this.proceduralTime = time;
             this.fallbackMaterial.uniforms.uTime.value = time;
             this.fallbackMaterial.uniforms.uOpacity.value = opacity;
         } else {
-            const opening = this.videoMaterial.map === this.opening.texture;
-            if (!opening) {
-                if (!this.loop.video.paused && this.loop.video.readyState >= this.loop.video.HAVE_FUTURE_DATA)
-                    this.loopAge += dt;
-                if (this.loopAge >= loopDuration) {
-                    this.clear();
-                    return;
-                }
-            }
-            time = opening ? this.opening.video.currentTime : this.opening.video.duration + this.loopAge;
-            opacity = opening ? T.MathUtils.smoothstep(time, 0, .24)
-                : T.MathUtils.clamp((loopDuration - this.loopAge) / .7, 0, 1);
             this.videoMaterial.opacity = opacity;
+            // If opening video stalled past 6.5s without firing 'ended', force transition to loop clip
+            if (this.phase === this.opening && time > 6.5) {
+                this.phase = this.loop;
+                this.loop.video.currentTime = 0;
+                this.play();
+            }
         }
         const expansion = T.MathUtils.smoothstep(time, 0, .76);
         this.mesh.scale.setScalar(.18 + .82 * expansion);
@@ -830,6 +824,7 @@ export class SwordArray {
         this.loop.video.pause();
         this.phase = undefined;
         this.loopAge = 0;
+        this.elapsedAge = 0;
         this.proceduralTime = 0;
         this.nextWave = 0;
         this.rain.length = 0;
