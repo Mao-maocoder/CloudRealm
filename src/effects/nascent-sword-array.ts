@@ -549,7 +549,7 @@ export class NascentSwordArray {
         this.finaleFlash = new T.Sprite(this.finaleFlashMat);
         this.finaleFlash.position.y = 2.6;
 
-        // 18 Crisscrossing Slanted Tapered Sword-Qi Spires (matching the Finale A concept image!)
+        // 18 Sequential Crisscrossing Slanted Sword-Qi Spires (歪七扭八交叉斜刺 + 逐根错峰爆发)
         this.spireMat = createCrisscrossSpireMaterial();
         const spireGeo = new T.CylinderGeometry(0.06, 1.55, 1.0, 12, 1, true);
         spireGeo.translate(0, 0.5, 0);
@@ -568,7 +568,8 @@ export class NascentSwordArray {
                 yaw: az,
                 height: isHero ? (36 + i * 3.5) : (24 + ((i * 17) % 14)),
                 radius: isHero ? (1.15 - i * 0.08) : (0.52 + ((i * 11) % 7) * 0.08),
-                delay: isHero ? i * 0.03 : 0.04 + ((i * 5) % 9) * 0.025,
+                // Staggered sequential eruption (~12 thrusts/s) matching the rapid sword-rain SFX.
+                delay: i * 0.082,
             };
             this.spireSpecs.push(spec);
             const mesh = new T.Mesh(spireGeo, this.spireMat);
@@ -1164,18 +1165,22 @@ export class NascentSwordArray {
         this.finaleGroup.visible = true;
         const p = age / 3.0;
 
-        // 1) 18 Crisscrossing Slanted Sky-Piercing Sword-Qi Spires!
+        // 1) 18 Sequential Upward-Piercing Sword-Qi Spires (一根根朝上扎)
         this.spireMat.uniforms.uTime.value = t;
-        this.spireMat.uniforms.uOpacity.value = smooth01(0, 0.12, age) * Math.pow(Math.max(0, 1 - p), 1.35);
+        this.spireMat.uniforms.uOpacity.value = smooth01(0, 0.08, age) * Math.pow(Math.max(0, 1 - smooth01(2.0, 3.0, age)), 1.25);
         for (let i = 0; i < this.spireMeshes.length; i++) {
             const spec = this.spireSpecs[i];
-            const sa = Math.max(0, age - spec.delay);
-            const shoot = smooth01(0, 0.24, sa);
-            const shrink = 1 - smooth01(0.45, 1.0, p) * 0.55;
+            const sa = age - spec.delay;
             const mesh = this.spireMeshes[i];
-            mesh.visible = sa > 0;
+            const life = 1.45;
+            mesh.visible = sa > 0 && sa < life;
             if (mesh.visible) {
-                mesh.scale.set(spec.radius * shrink, Math.max(0.01, spec.height * shoot), spec.radius * shrink);
+                // Snappy upward thrust (0 -> 0.14s), brief hold, then taper & dissolve.
+                const thrustT = Math.min(1, sa / 0.14);
+                const shoot = 1 - Math.pow(1 - thrustT, 3);
+                const decay = 1 - smooth01(0.75, life, sa);
+                const widthScale = spec.radius * (0.25 + 0.75 * decay);
+                mesh.scale.set(widthScale, Math.max(0.01, spec.height * shoot * (0.45 + 0.55 * decay)), widthScale);
             }
         }
 

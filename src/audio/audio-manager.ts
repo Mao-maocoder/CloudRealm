@@ -2,6 +2,10 @@ import type { GroundSample } from '../effects/fireball-trajectory';
 
 const BGM_WORLD_URL = new URL('../../resource/audio/bgm_world.mp3', import.meta.url).href;
 const DRAGON_BACKLASH_URL = new URL('../../resource/audio/dragon_backlash.mp3', import.meta.url).href;
+const GIANT_SWORD_CAST_URL = new URL('../../resource/audio/giant_sword_cast.mp3', import.meta.url).href;
+const GIANT_SWORD_IMPACT_URL = new URL('../../resource/audio/giant_sword_impact.mp3', import.meta.url).href;
+const SWORD_ARRAY_START_URL = new URL('../../resource/audio/sword_array_start.mp3', import.meta.url).href;
+const SWORD_ARRAY_RAIN_URL = new URL('../../resource/audio/sword_array_rain.mp3', import.meta.url).href;
 
 export type SurfaceKind = GroundSample['kind'];
 
@@ -27,8 +31,11 @@ export class AudioManager {
     private bgmGain?: GainNode;
     private sfxGain?: GainNode;
     private noiseBuffer?: AudioBuffer;
-    private dragonBacklashBuffer?: AudioBuffer;
-    private dragonBacklashLoading = false;
+    private readonly sfxBuffers = new Map<string, AudioBuffer>();
+    private readonly sfxLoading = new Set<string>();
+    private activeGiantCast: Array<{ src: AudioBufferSourceNode; gain: GainNode }> = [];
+    private activeSwordArray: Array<{ src: AudioBufferSourceNode; gain: GainNode }> = [];
+    private swordArrayActiveUntil = 0;
 
     // World BGM element
     private bgmEl?: HTMLAudioElement;
@@ -192,7 +199,7 @@ export class AudioManager {
             this.bossDroneGain = dg;
 
             this.applyGains();
-            this.preloadDragonBacklash(ctx);
+            this.preloadSfxAssets(ctx);
         }
 
         if (this.ctx.state === 'suspended') {
@@ -386,45 +393,168 @@ export class AudioManager {
         this.spawnNoiseBurst(ctx, now, 0.52, 'lowpass', 780, 0.7, 0.46 * s);
     }
 
-    playGiantSwordCast() {
+    playGiantSwordCast(isNascent = false) {
         const ctx = this.ready();
         if (!ctx) return;
-        const now = ctx.currentTime;
-        this.spawnTone(ctx, now, 0.75, 'sine', 528, 396, 0.26);
-        this.spawnTone(ctx, now + 0.04, 0.65, 'triangle', 1056, 792, 0.15);
-        this.spawnNoiseBurst(ctx, now, 0.45, 'bandpass', 900, 1.2, 0.28);
-    }
-
-    playGiantSwordImpact() {
-        const ctx = this.ready();
-        if (!ctx) return;
-        const now = ctx.currentTime;
-        this.spawnTone(ctx, now, 0.65, 'sine', 110, 26, 0.65);
-        this.spawnNoiseBurst(ctx, now, 0.6, 'lowpass', 620, 0.8, 0.55);
-        this.spawnTone(ctx, now, 0.5, 'triangle', 440, 165, 0.22);
-    }
-
-    playSwordArrayStart() {
-        const ctx = this.ready();
-        if (!ctx) return;
-        const now = ctx.currentTime;
-        // Pentatonic ethereal sword array chime chord
-        const notes = [523.25, 659.25, 783.99, 1046.5];
-        notes.forEach((f, idx) => {
-            this.spawnTone(ctx, now + idx * 0.07, 0.85, 'sine', f, f * 1.01, 0.14);
+        this.stopGiantSwordCast(0.08);
+        if (isNascent) {
+            const played = this.playSfxBuffer(ctx, 'giantSwordCast', GIANT_SWORD_CAST_URL, {
+                gain: 0.95,
+                fadeIn: 0.025,
+                fadeOut: 0.14,
+            });
+            if (played) {
+                this.activeGiantCast = [played];
+                played.src.onended = () => this.untrackGiantCast(played);
+                return;
+            }
+            this.playSfxFallbackAudio(GIANT_SWORD_CAST_URL, 0.95);
+            return;
+        }
+        // Pre-Nascent Giant Sword (筑基/结丹): compact 2.1s cast (burst at 1.23s, launch at 1.89s).
+        // Remix real MP3 into two tightly-synced layers: gathering hum -> burst & launch whoosh.
+        const gather = this.playSfxBuffer(ctx, 'giantSwordCast', GIANT_SWORD_CAST_URL, {
+            offset: 0.0,
+            duration: 1.45,
+            playbackRate: 1.15,
+            gain: 0.84,
+            fadeIn: 0.02,
+            fadeOut: 0.22,
         });
-        this.spawnNoiseBurst(ctx, now, 0.55, 'bandpass', 1800, 1.6, 0.22);
+        const launch = this.playSfxBuffer(ctx, 'giantSwordCast', GIANT_SWORD_CAST_URL, {
+            delay: 1.12,
+            offset: 2.10,
+            duration: 1.35,
+            playbackRate: 1.14,
+            gain: 0.92,
+            fadeIn: 0.06,
+            fadeOut: 0.18,
+        });
+        if (gather || launch) {
+            this.activeGiantCast = [];
+            if (gather) {
+                this.activeGiantCast.push(gather);
+                gather.src.onended = () => this.untrackGiantCast(gather);
+            }
+            if (launch) {
+                this.activeGiantCast.push(launch);
+                launch.src.onended = () => this.untrackGiantCast(launch);
+            }
+            return;
+        }
+        this.playSfxFallbackAudio(GIANT_SWORD_CAST_URL, 0.88);
+    }
+
+    stopGiantSwordCast(fadeSec = 0.12) {
+        if (!this.activeGiantCast.length || !this.ctx) {
+            this.activeGiantCast = [];
+            return;
+        }
+        const nodes = this.activeGiantCast;
+        this.activeGiantCast = [];
+        for (const n of nodes) this.fadeOutNode(this.ctx, n.src, n.gain, fadeSec);
+    }
+
+    playGiantSwordImpact(isNascent = false) {
+        const ctx = this.ready();
+        if (!ctx) return;
+        const played = this.playSfxBuffer(ctx, 'giantSwordImpact', GIANT_SWORD_IMPACT_URL, isNascent
+            ? { gain: 1.05, playbackRate: 0.96, fadeIn: 0.008, fadeOut: 0.16 }
+            : { gain: 0.92, playbackRate: 1.12, duration: 1.55, fadeIn: 0.008, fadeOut: 0.22 });
+        if (!played) {
+            this.playSfxFallbackAudio(GIANT_SWORD_IMPACT_URL, isNascent ? 1.0 : 0.9);
+        }
+    }
+
+    playSwordArrayStart(isNascent = false) {
+        const ctx = this.ready();
+        if (!ctx) return;
+        this.stopSwordArray(0.1);
+        const now = ctx.currentTime;
+        if (isNascent) {
+            const startNode = this.playSfxBuffer(ctx, 'swordArrayStart', SWORD_ARRAY_START_URL, {
+                gain: 0.92,
+                fadeIn: 0.02,
+                fadeOut: 0.32,
+            });
+            const rainDelay = 3.15;
+            const rainNode = this.playSfxBuffer(ctx, 'swordArrayRain', SWORD_ARRAY_RAIN_URL, {
+                delay: rainDelay,
+                gain: 0.90,
+                fadeIn: 0.25,
+                fadeOut: 0.28,
+            });
+            if (startNode || rainNode) {
+                if (startNode) this.trackSwordArrayNode(startNode);
+                if (rainNode) this.trackSwordArrayNode(rainNode);
+                const rainDur = this.sfxBuffers.get('swordArrayRain')?.duration ?? 8.6;
+                this.swordArrayActiveUntil = now + rainDelay + rainDur;
+                return;
+            }
+            this.playSfxFallbackAudio(SWORD_ARRAY_START_URL, 0.92);
+            return;
+        }
+        // Pre-Nascent Sword Array (结丹): rain begins at 0.82s and 56 waves finish landing around ~16.9s.
+        // Remix: crisp 1.1s sword unsheathing -> three crossfaded pure-rain passes covering the full ~17s barrage.
+        const openNode = this.playSfxBuffer(ctx, 'swordArrayStart', SWORD_ARRAY_START_URL, {
+            offset: 0.0,
+            duration: 1.45,
+            playbackRate: 1.18,
+            gain: 0.88,
+            fadeIn: 0.015,
+            fadeOut: 0.30,
+        });
+        const rainPasses = [
+            this.playSfxBuffer(ctx, 'swordArrayRain', SWORD_ARRAY_RAIN_URL, {
+                delay: 0.78,
+                offset: 0.55,
+                duration: 5.75,
+                playbackRate: 1.02,
+                gain: 0.84,
+                fadeIn: 0.24,
+                fadeOut: 0.45,
+            }),
+            this.playSfxBuffer(ctx, 'swordArrayRain', SWORD_ARRAY_RAIN_URL, {
+                delay: 6.00,
+                offset: 0.65,
+                duration: 5.75,
+                playbackRate: 0.98,
+                gain: 0.84,
+                fadeIn: 0.42,
+                fadeOut: 0.45,
+            }),
+            this.playSfxBuffer(ctx, 'swordArrayRain', SWORD_ARRAY_RAIN_URL, {
+                delay: 11.45,
+                offset: 0.60,
+                duration: 5.60,
+                playbackRate: 1.00,
+                gain: 0.82,
+                fadeIn: 0.42,
+                fadeOut: 0.85,
+            }),
+        ];
+        if (openNode || rainPasses.some(Boolean)) {
+            if (openNode) this.trackSwordArrayNode(openNode);
+            for (const n of rainPasses) if (n) this.trackSwordArrayNode(n);
+            this.swordArrayActiveUntil = now + 17.05;
+            return;
+        }
+        this.playSfxFallbackAudio(SWORD_ARRAY_START_URL, 0.88);
+    }
+
+    stopSwordArray(fadeSec = 0.15) {
+        this.swordArrayActiveUntil = 0;
+        if (!this.activeSwordArray.length || !this.ctx) {
+            this.activeSwordArray = [];
+            return;
+        }
+        const nodes = this.activeSwordArray;
+        this.activeSwordArray = [];
+        for (const n of nodes) this.fadeOutNode(this.ctx, n.src, n.gain, fadeSec);
     }
 
     playSwordRainHit() {
-        const ctx = this.ready();
-        if (!ctx) return;
-        const now = ctx.currentTime;
-        if (now - this.lastRainHitTime < 0.055) return;
-        this.lastRainHitTime = now;
-        const j = 0.85 + Math.random() * 0.35;
-        this.spawnTone(ctx, now, 0.12, 'sine', 1350 * j, 820 * j, 0.09);
-        this.spawnNoiseBurst(ctx, now, 0.06, 'bandpass', 2400 * j, 2.0, 0.11);
+        // Real sword-rain audio (`sword_array_rain.mp3`) covers the barrage; old synth beeps removed.
     }
 
     playDivineSensePulse() {
@@ -520,38 +650,113 @@ export class AudioManager {
         this.spawnTone(ctx, now + 0.16, 0.12, 'sine', 56, 30, v * 0.75);
     }
 
-    private preloadDragonBacklash(ctx: AudioContext) {
-        if (this.dragonBacklashBuffer || this.dragonBacklashLoading) return;
-        this.dragonBacklashLoading = true;
-        void fetch(DRAGON_BACKLASH_URL)
+    private preloadSfxAssets(ctx: AudioContext) {
+        this.preloadSfxBuffer(ctx, 'dragonBacklash', DRAGON_BACKLASH_URL);
+        this.preloadSfxBuffer(ctx, 'giantSwordCast', GIANT_SWORD_CAST_URL);
+        this.preloadSfxBuffer(ctx, 'giantSwordImpact', GIANT_SWORD_IMPACT_URL);
+        this.preloadSfxBuffer(ctx, 'swordArrayStart', SWORD_ARRAY_START_URL);
+        this.preloadSfxBuffer(ctx, 'swordArrayRain', SWORD_ARRAY_RAIN_URL);
+    }
+
+    private preloadSfxBuffer(ctx: AudioContext, key: string, url: string) {
+        if (this.sfxBuffers.has(key) || this.sfxLoading.has(key)) return;
+        this.sfxLoading.add(key);
+        void fetch(url)
             .then(res => res.arrayBuffer())
             .then(buf => ctx.decodeAudioData(buf))
             .then(decoded => {
-                if (!this.disposed) this.dragonBacklashBuffer = decoded;
+                this.sfxLoading.delete(key);
+                if (!this.disposed) this.sfxBuffers.set(key, decoded);
             })
             .catch(() => {
-                this.dragonBacklashLoading = false;
+                this.sfxLoading.delete(key);
             });
+    }
+
+    private playSfxBuffer(
+        ctx: AudioContext,
+        key: string,
+        url: string,
+        opts: {
+            gain?: number;
+            delay?: number;
+            offset?: number;
+            duration?: number;
+            playbackRate?: number;
+            fadeIn?: number;
+            fadeOut?: number;
+        } = {},
+    ): { src: AudioBufferSourceNode; gain: GainNode } | undefined {
+        if (!this.sfxGain) return undefined;
+        this.preloadSfxBuffer(ctx, key, url);
+        const buffer = this.sfxBuffers.get(key);
+        if (!buffer) return undefined;
+        const rate = opts.playbackRate ?? 1.0;
+        const offset = Math.max(0, Math.min(opts.offset ?? 0, Math.max(0, buffer.duration - 0.05)));
+        const srcSpan = Math.min(opts.duration ?? (buffer.duration - offset), buffer.duration - offset);
+        const playDur = srcSpan / rate;
+        const startAt = ctx.currentTime + (opts.delay ?? 0);
+        const peak = opts.gain ?? 1.0;
+        const fadeIn = Math.min(opts.fadeIn ?? 0.01, playDur * 0.25);
+        const fadeOut = Math.min(opts.fadeOut ?? 0.06, playDur * 0.4);
+
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.playbackRate.value = rate;
+        const gain = ctx.createGain();
+        if (fadeIn > 0.001) {
+            gain.gain.setValueAtTime(0.0001, startAt);
+            gain.gain.linearRampToValueAtTime(peak, startAt + fadeIn);
+        } else {
+            gain.gain.setValueAtTime(peak, startAt);
+        }
+        const fadeOutStart = startAt + Math.max(fadeIn, playDur - fadeOut);
+        gain.gain.setValueAtTime(peak, fadeOutStart);
+        gain.gain.linearRampToValueAtTime(0.0001, startAt + playDur);
+
+        src.connect(gain);
+        gain.connect(this.sfxGain);
+        src.start(startAt, offset, srcSpan);
+        return { src, gain };
+    }
+
+    private untrackGiantCast(node: { src: AudioBufferSourceNode; gain: GainNode }) {
+        const idx = this.activeGiantCast.indexOf(node);
+        if (idx >= 0) this.activeGiantCast.splice(idx, 1);
+    }
+
+    private trackSwordArrayNode(node: { src: AudioBufferSourceNode; gain: GainNode }) {
+        this.activeSwordArray.push(node);
+        node.src.onended = () => {
+            const idx = this.activeSwordArray.indexOf(node);
+            if (idx >= 0) this.activeSwordArray.splice(idx, 1);
+        };
+    }
+
+    private fadeOutNode(ctx: AudioContext, src: AudioBufferSourceNode, gain: GainNode, fadeSec: number) {
+        const now = ctx.currentTime;
+        try {
+            gain.gain.cancelScheduledValues(now);
+            gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now);
+            gain.gain.linearRampToValueAtTime(0.0001, now + fadeSec);
+            src.stop(now + fadeSec + 0.02);
+        } catch {}
+    }
+
+    private playSfxFallbackAudio(url: string, gain = 1.0) {
+        if (this.muted || this.disposed) return;
+        const el = new Audio(url);
+        el.volume = Math.max(0, Math.min(1, this.sfxVolume * gain));
+        void el.play().catch(() => {});
     }
 
     playDragonSenseBacklash() {
         const ctx = this.ready();
         if (!ctx || !this.sfxGain) return;
-        this.preloadDragonBacklash(ctx);
-        if (this.dragonBacklashBuffer) {
-            const src = ctx.createBufferSource();
-            src.buffer = this.dragonBacklashBuffer;
-            const gain = ctx.createGain();
-            gain.gain.value = 1.05;
-            src.connect(gain);
-            gain.connect(this.sfxGain);
-            src.start(ctx.currentTime);
+        if (this.playSfxBuffer(ctx, 'dragonBacklash', DRAGON_BACKLASH_URL, { gain: 1.05, fadeIn: 0.005, fadeOut: 0.05 })) {
             return;
         }
-        // Fallback if still decoding on very first trigger: play directly via HTMLAudioElement
-        const el = new Audio(DRAGON_BACKLASH_URL);
-        el.volume = Math.min(1, this.muted ? 0 : this.sfxVolume);
-        void el.play().catch(() => {});
+        this.playSfxFallbackAudio(DRAGON_BACKLASH_URL, 1.0);
     }
 
     // =========================================================================
@@ -624,6 +829,8 @@ export class AudioManager {
 
     dispose() {
         this.disposed = true;
+        this.stopGiantSwordCast(0.02);
+        this.stopSwordArray(0.02);
         if (this.uiBtn) this.uiBtn.onclick = null;
         this.bgmEl?.pause();
         this.bgmEl = undefined;

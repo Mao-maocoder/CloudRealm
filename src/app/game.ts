@@ -113,6 +113,7 @@ export class Game {
     private readonly zeroVelocity = new T.Vector3();
     private disposed = false;
     private fireballPower?: number;
+    private wasGiantSwordCasting = false;
     private nightAnnounced = false;
     private lastShownTier = 0;
     private nascentAssetsPromise?: Promise<void>;
@@ -428,7 +429,7 @@ export class Game {
                 return Math.min(w, d);
             },
             (point, directHit) => {
-                this.audio.playGiantSwordImpact();
+                this.audio.playGiantSwordImpact(this.vitals.realmIndex >= 3);
                 this.wildlife.giantSwordBlast(point, directHit);
                 this.dragonBoss?.giantSwordBlast(point, directHit, giantSwordSplashRadius);
             },
@@ -448,7 +449,7 @@ export class Game {
                 this.dragonBoss?.rainContact(sword);
             },
             point => {
-                this.audio.playGiantSwordImpact();
+                this.audio.playGiantSwordImpact(true);
                 this.wildlife.giantSwordBlast(point, true);
                 this.dragonBoss?.giantSwordBlast(point, true, giantSwordSplashRadius * 1.35);
             },
@@ -466,7 +467,7 @@ export class Game {
             },
             position => {
                 const isNascent = this.vitals.realmIndex >= 3;
-                this.audio.playSwordArrayStart();
+                this.audio.playSwordArrayStart(isNascent);
                 let focusTargets: T.Vector3[] | undefined;
                 if (isNascent && this.divineSense.insightActive) {
                     const maxRange = Math.max(85, this.vitals.stats.senseLockRange);
@@ -559,6 +560,7 @@ export class Game {
                         this.fireballPower = undefined;
                         this.input.clear();
                         this.swordArray.clear();
+                        this.audio.stopSwordArray();
                         this.dragonGravityPressure.trigger(this.dragonSuppressionAnchor, 3.2);
                         this.dragonBoss.triggerRealmSuppression(this.dragonSuppressionAnchor);
                         this.audio.playDragonSenseBacklash();
@@ -1000,8 +1002,10 @@ export class Game {
         this.flightAirflow.clear();
         this.voidFlight.clear();
         this.swordArray.clear();
+        this.audio.stopSwordArray();
         this.fireball.clear();
         this.giantSword.clear();
+        this.audio.stopGiantSwordCast();
         this.divineSense.clear();
         const [x, y, z] = region.arrival, target = buildingViewTarget(region);
         const dx = target.x - x, dz = target.z - z;
@@ -1021,8 +1025,10 @@ export class Game {
         this.flightAirflow.clear();
         this.voidFlight.clear();
         this.swordArray.clear();
+        this.audio.stopSwordArray();
         this.fireball.clear();
         this.giantSword.clear();
+        this.audio.stopGiantSwordCast();
         this.divineSense.clear();
         this.dragonGravityPressure.clear();
         this.nascentGravityPressure.clear();
@@ -1179,6 +1185,10 @@ export class Game {
             );
             this.fireballPower = undefined;
         }
+        if (avatar.giantSwordCasting && !this.wasGiantSwordCasting) {
+            this.audio.playGiantSwordCast(isNascent);
+        }
+        this.wasGiantSwordCasting = avatar.giantSwordCasting;
         this.giantSword.updateCast(avatar.giantSwordTime, this.camera, this.player.position, heading, isNascent,
             this.divineSense.insightActive ? this.senseCombatTarget : undefined);
         this.giantSword.update(dt);
