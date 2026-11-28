@@ -14,6 +14,7 @@ import {art} from '../../config/art';
 import {readArtStyle} from '../../config/settings';
 import { bounds, riverSamplesAt, waterSurfaceAt } from '../geo/geo-core';
 import { inBuildingLot } from '../biomes/building-layout';
+import { inSpawnShrineClearance } from '../geo/spawn-site';
 import { bossTreeClearance, inBossTerritory } from '../geo/boss-territories';
 import { peaklandWeight } from '../geo/peakland-plan';
 import { isMountainPineHabitat,regionalHabitatAt } from '../geo/regional-habitat';
@@ -24,6 +25,7 @@ import { bambooSeaRadius } from '../geo/regions';
 import { makeShoreStoneGeometry, makeShoreStoneMaterial } from '../../rendering/shore-stone';
 import { makePainterlyBarkMaterial, windify, type WindUniforms } from '../../rendering/foliage-wind';
 import type { SurfaceWake } from '../../effects/surface-wake';
+import type { SpawnShoreGrass } from '../../rendering/spawn-shore-grass';
 export { windify, type WindUniforms };
 
 export type GuofengTreePair = {
@@ -83,6 +85,7 @@ export function loadSharedGuofengTreeKit(): Promise<GuofengTreeKit | undefined> 
  * materials so the CPU only updates a few uniforms per frame.
  */
 export class Vegetation {
+    spawnShoreGrass?: SpawnShoreGrass;
     private sakuraTrunk: T.BufferGeometry;
     private sakuraCrown: T.BufferGeometry;
     private pineTrunk: T.BufferGeometry;
@@ -342,7 +345,8 @@ export class Vegetation {
             const gfMeadowStone = this.isGuofeng && valleyArtAt(px, pz) > .25 && trailDistance(px, pz) > 6 && !inBuildingLot(px, pz, 5) && randomAt(px, pz, 118) > .68;
             if (!gfMeadowStone && slope < .38 && h > 6)
                 continue;
-            rocks.push([px, h, pz, .35 + randomAt(px, pz, 12) * 1.25]);
+            const size = .35 + randomAt(px, pz, 12) * 1.25;
+            if (!inSpawnShrineClearance(px, pz, size)) rocks.push([px, h, pz, size]);
         }
 
         for (let i = 0; i < Math.max(10, Math.round(80 * density)); i++) {
@@ -376,7 +380,7 @@ export class Vegetation {
             const px=x+(i%bankGrid+randomAt(x+i,z,99))*128/bankGrid;
             const pz=z+(Math.floor(i/bankGrid)+randomAt(x,z+i,100))*128/bankGrid;
             const upgrade=valleyArtAt(px,pz);
-            if(randomAt(px,pz,98)>=upgrade||trailDistance(px,pz)<3.6||inBuildingLot(px,pz,1.4))continue;
+            if(randomAt(px,pz,98)>=upgrade||trailDistance(px,pz)<3.6||inBuildingLot(px,pz,1.4)||inSpawnShrineClearance(px,pz,0.6))continue;
             const roll=randomAt(px,pz,104);
             const shore=shoreDistanceAt(px,pz);
             if(shore>-1.2&&shore<13.5){
@@ -443,6 +447,8 @@ export class Vegetation {
             const box = new T.Box3();
             let k = 0;
             for (const [px, h, pz, s] of points) {
+                if ((kind === 2 || kind === 3 || kind === 6 || kind >= 10)
+                    && this.spawnShoreGrass?.blocksPlant(px, pz, Math.min(1.4, .24 + s * .54))) continue;
                 dummy.position.set(px, h, pz);
                 const tree = kind===0 || kind===1 || kind===7 || kind===8;
                 dummy.rotation.set(0, randomAt(px, pz, tree?29:30 + kind) * 6.283, 0);
@@ -524,8 +530,8 @@ export class Vegetation {
                 }
                 else if(kind===11) {
                     dummy.scale.set(s*1.15,s*.95,s*1.15);
-                    const cA = this.isGuofeng ? '#4b633c' : '#73be46';
-                    const cB = this.isGuofeng ? '#324a34' : '#4b9c42';
+                    const cA = this.isGuofeng ? '#84a264' : '#73be46';
+                    const cB = this.isGuofeng ? '#5d7d52' : '#4b9c42';
                     color.set(cA).lerp(new T.Color(cB),randomAt(px,pz,125))
                         .multiplyScalar(.92+randomAt(px,pz,126)*.18);
                 }
@@ -561,6 +567,7 @@ export class Vegetation {
                     mesh.setColorAt(k, color);
                 k++;
             }
+            mesh.count = k;
             mesh.instanceMatrix.needsUpdate = true;
             if (mesh.instanceColor)
                 mesh.instanceColor.needsUpdate = true;

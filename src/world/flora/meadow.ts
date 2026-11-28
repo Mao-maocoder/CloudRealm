@@ -21,6 +21,7 @@ import { valleyArtAt, valleySward, valleyWoodland } from '../geo/valley-art';
 import { regionalHabitatAt } from '../geo/regional-habitat';
 import { canyonNorth, canyonSouth } from '../geo/canyon-plan';
 import type { CanyonRockField } from '../biomes/canyon-rock';
+import type { SpawnShoreGrass } from '../../rendering/spawn-shore-grass';
 
 function meadowField(data: Float32Array<ArrayBuffer>, x: number, z: number, step: number, width: number, height: number) {
     const texture = new T.DataTexture(data, width, height, T.RGBAFormat, T.FloatType);
@@ -274,7 +275,8 @@ export class Meadow {
         private villageGround: {value:T.Texture}, private riverbank: {value:T.Texture},
         private regionalHabitat: {value:T.Texture}, private clearingLight: {value:T.Texture},
         private riverCorridor: {value:T.Texture}, private canyon?: CanyonRockField,
-        private fireballScorches = createGrassScorchUniforms()) {
+        private fireballScorches = createGrassScorchUniforms(),
+        private spawnShoreGrass?: SpawnShoreGrass) {
         scene.add(this.group);
         this.addShells(this.ground, 0, this.compactGround);
     }
@@ -302,12 +304,13 @@ export class Meadow {
                 uRiverCorridor:this.riverCorridor,...this.wake.uniforms,
                 ...this.fireballScorches,
                 uFocalPixels:this.focalPixels,
+                uSpawnShoreGrass:{value:this.spawnShoreGrass?.texture ?? null},
             };
             material.userData.uniforms = uniforms;
-            material.customProgramCacheKey = () => `meadow-${flower ? 'flowers' : 'grass'}-${this.isGuofeng ? 'guofeng' : 'anime'}`;
+            material.customProgramCacheKey = () => `meadow-${flower ? 'flowers' : 'grass'}-${this.isGuofeng ? 'guofeng' : 'anime'}-${Number(!!this.spawnShoreGrass)}`;
             material.onBeforeCompile = shader => {
                 Object.assign(shader.uniforms, uniforms, atmosphereUniforms);
-                const styleDefine = `#define MEADOW_GUOFENG ${Number(this.isGuofeng)}\n`;
+                const styleDefine = `#define MEADOW_GUOFENG ${Number(this.isGuofeng)}\n#define MEADOW_SHORE_MASK ${Number(!!this.spawnShoreGrass)}\n`;
                 shader.vertexShader = styleDefine + 'varying vec3 vBladeWorld;\n' + (flower?flowerPlacementGLSL:placementGLSL)+'\n'+shader.vertexShader
                     .replace('#include <beginnormal_vertex>','vec3 bladePosition,bladeNormal;placeBlade(bladePosition,bladeNormal);vec3 objectNormal=bladeNormal;')
                     .replace('#include <begin_vertex>','vec3 transformed=bladePosition;vBladeWorld=bladePosition;');

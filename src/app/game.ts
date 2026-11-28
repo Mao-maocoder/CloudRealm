@@ -1,7 +1,8 @@
 import * as T from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { AdaptiveResolutionScaler, detectDevice, RenderFrameClock } from '../config/device';
-import { config, qualities, readQuality, type Quality } from '../config/settings';
+import { config, qualities, readArtStyle, readQuality, type Quality } from '../config/settings';
+import { SpawnShoreGrass } from '../rendering/spawn-shore-grass';
 import { openValleyReference } from '../dev/valley-reference';
 import { Fireball } from '../effects/fireball';
 import { FlightAirflow } from '../effects/flight-airflow';
@@ -52,6 +53,7 @@ function nextAnimationFrame(): Promise<void> {
 
 export class Game {
     private readonly device = detectDevice();
+    private readonly spawnShoreGrass = readArtStyle() === 'guofeng' ? new SpawnShoreGrass() : undefined;
     private readonly viewport = document.querySelector<HTMLElement>('#app')!;
     private viewportObserver?: ResizeObserver;
     private readonly resolutionScaler = new AdaptiveResolutionScaler(this.device.isMobile ? 0.6 : 0.72);
@@ -507,8 +509,9 @@ export class Game {
         this.lastShownTier = this.vitals.stats.tier;
         this.follow = new FollowCamera(this.camera, this.player, this.input);
         this.terrain = new Terrain(this.scene, this.quality);
-        this.atmosphere = new Atmosphere(this.scene, this.quality);
-        this.bridgeGrove = new BridgeGrove(this.atmosphere.sunDirection, this.terrain.vegetation.uniforms);
+        this.atmosphere = new Atmosphere(this.scene, this.quality, this.spawnShoreGrass);
+        this.bridgeGrove = new BridgeGrove(this.atmosphere.sunDirection, this.terrain.vegetation.uniforms, this.spawnShoreGrass);
+        this.terrain.vegetation.spawnShoreGrass = this.spawnShoreGrass;
         this.audio = new AudioManager();
         const unlockAudio = () => this.audio.unlock();
         window.addEventListener('pointerdown', unlockAudio, { passive: true });
@@ -595,7 +598,7 @@ export class Game {
         this.meadow = new Meadow(
             this.scene, this.surfaceWake, this.quality,
             uVillageGround, uRiverbank, uRegionalHabitat, uClearingLight, uRiverCorridor,
-            this.terrain.canyon, this.fireball.grassScorches,
+            this.terrain.canyon, this.fireball.grassScorches, this.spawnShoreGrass,
         );
         this.terrain.vegetation.setWake(this.surfaceWake);
         this.atmosphere.water.setWake(this.surfaceWake);
@@ -616,7 +619,7 @@ export class Game {
             },
             this.quality,
         );
-        this.expansion = new MapExpansion(this.scene);
+        this.expansion = new MapExpansion(this.scene, this.spawnShoreGrass);
         this.expansion.setWind(this.terrain.vegetation.uniforms);
         this.wildlife = new Wildlife(
             this.scene,
@@ -1561,6 +1564,7 @@ export class Game {
         this.surfaceWake.dispose();
         this.expansion.dispose();
         this.bridgeGrove.dispose();
+        this.spawnShoreGrass?.texture.dispose();
         this.bossTerritories.dispose();
         this.dragonBoss.dispose();
         this.bossHealthBar.dispose();

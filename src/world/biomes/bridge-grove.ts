@@ -7,13 +7,15 @@ import { riverX, waterLevelAt } from '../geo/geo-core';
 import { addBoulderSolid, addSolid, releaseSolids } from '../physics/solid-world';
 import { loadSharedGuofengTreeKit, windify, type WindUniforms } from '../flora/vegetation';
 import { makeShoreStoneGeometry, makeShoreStoneMaterial } from '../../rendering/shore-stone';
+import { inSpawnShrineClearance } from '../geo/spawn-site';
+import type { SpawnShoreGrass } from '../../rendering/spawn-shore-grass';
 
 export class BridgeGrove extends T.Group {
     private readonly geometry: T.BufferGeometry[] = [];
     private readonly materials: T.Material[] = [];
     private leafTexture?: T.Texture;
 
-    constructor(sunDirection: T.Vector3, wind: WindUniforms) {
+    constructor(sunDirection: T.Vector3, wind: WindUniforms, private spawnShoreGrass?: SpawnShoreGrass) {
         super();
         this.name = 'bridge-grove';
         if (!bridgeArtEnabled) return;
@@ -122,6 +124,8 @@ export class BridgeGrove extends T.Group {
         });
         windify(shrubMat,wind,.14,2.6);
         const bankShrubs = new T.InstancedMesh(shrubGeo,shrubMat,clusters.length*6);
+        stones.name = 'bridge-bank-stones';
+        sedges.name = 'bridge-bank-sedges';
         const instance = new T.Object3D();
         const fresh=new T.Color(isGuofeng ? '#5d7342' : '#b6e854'), deep=new T.Color(isGuofeng ? '#2c4a35' : '#4a9d4e'), color=new T.Color();
         const bloomPalette=isGuofeng ? ['#eeeae0','#e2d49a','#f2efe6','#9acbb8'] : ['#ffe44d','#fffaf0','#66b8ff','#ff8db8','#be92ff'];
@@ -133,8 +137,9 @@ export class BridgeGrove extends T.Group {
             const z = centerZ+(randomAt(i,centerZ,209)-.5)*11;
             const offset = 21.5+randomAt(i,centerZ,210)*4.8;
             const x = riverX(z)+offset*side;
-            if (trailDistance(x,z)<5) continue;
+            if (trailDistance(x,z)<5 || inSpawnShrineClearance(x,z,.95)) continue;
             const size = i===0 ? largest : largest * (.20+.42*randomAt(i,centerZ,211));
+            if (inSpawnShrineClearance(x, z, size * .70)) continue;
             const water = waterLevelAt(z);
             const groundY = heightAt(x,z);
             const y = Math.max(water-.46,Math.min(water+.95,groundY-.18));
@@ -145,6 +150,7 @@ export class BridgeGrove extends T.Group {
             stones.setMatrixAt(count,instance.matrix);
             stones.setColorAt(count++,color.set(randomAt(i,centerZ,242)>.51?'#9ea68e':'#8c9884'));
             rockBox.copy(rockBase).applyMatrix4(instance.matrix);
+            this.spawnShoreGrass?.addStone(rock, instance.matrix, rockBox);
             if (Math.max(rockBox.max.x - rockBox.min.x, rockBox.max.z - rockBox.min.z) > .55 && rockBox.max.y > water - .25) {
                 addBoulderSolid(this, rockBox.min.x, rockBox.max.x, rockBox.min.y, rockBox.max.y, rockBox.min.z, rockBox.max.z, groundY);
             }
@@ -158,8 +164,9 @@ export class BridgeGrove extends T.Group {
                 const z=centerZ+(randomAt(i,centerZ,214)-.5)*32;
                 const x=riverX(z)+side*(20.4+randomAt(i,centerZ,215)*16.5);
                 const y=heightAt(x,z);
-                if (y<waterLevelAt(z)+.04 || trailDistance(x,z)<3.4) continue;
+                if (y<waterLevelAt(z)+.04 || trailDistance(x,z)<3.4 || inSpawnShrineClearance(x,z,.35)) continue;
                 const size=.82+randomAt(i,centerZ,216)*1.22;
+                if (this.spawnShoreGrass?.blocksPlant(x, z, .25 + size * .55)) continue;
                 instance.position.set(x,y-.06,z);
                 instance.rotation.set(0,randomAt(i,centerZ,217)*6.28,0);
                 instance.scale.set(size*1.32,size*1.62,size*1.32);
@@ -171,8 +178,9 @@ export class BridgeGrove extends T.Group {
                 const z=centerZ+(randomAt(i,centerZ,231)-.5)*30;
                 const x=riverX(z)+side*(21.8+randomAt(i,centerZ,232)*15.0);
                 const y=heightAt(x,z);
-                if (y<waterLevelAt(z)+.18 || trailDistance(x,z)<3.6) continue;
+                if (y<waterLevelAt(z)+.18 || trailDistance(x,z)<3.6 || inSpawnShrineClearance(x,z,.2)) continue;
                 const size=.72+randomAt(i,centerZ,233)*.74;
+                if (this.spawnShoreGrass?.blocksPlant(x, z, .58)) continue;
                 instance.position.set(x,y-.02,z);
                 instance.rotation.set(0,randomAt(i,centerZ,234)*6.28,0);
                 instance.scale.set(size*1.12,size*1.08,size*1.12);
@@ -180,11 +188,11 @@ export class BridgeGrove extends T.Group {
                 bankFlowers.setMatrixAt(flowerCount,instance.matrix);
                 bankFlowers.setColorAt(flowerCount++,color.set(bloomPalette[(i+Math.abs(centerZ))%bloomPalette.length]));
             }
-            for (let i=0;i<12;i++) {
+            for (let i=0;i<(isGuofeng ? 0 : 12);i++) {
                 const z=centerZ+(randomAt(i,centerZ,241)-.5)*28;
                 const x=riverX(z)+side*(23.4+randomAt(i,centerZ,242)*15.5);
                 const y=heightAt(x,z);
-                if (y<waterLevelAt(z)+.22 || trailDistance(x,z)<3.4) continue;
+                if (y<waterLevelAt(z)+.22 || trailDistance(x,z)<3.4 || inSpawnShrineClearance(x,z,1.5)) continue;
                 const size=.90+randomAt(i,centerZ,243)*.85;
                 instance.position.set(x,y,z);
                 instance.rotation.set(0,randomAt(i,centerZ,244)*6.28,0);

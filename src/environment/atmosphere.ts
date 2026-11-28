@@ -7,6 +7,7 @@ import { Petals } from './petals';
 import { SkyBirds } from './sky-birds';
 import { Fireflies } from './fireflies';
 import { ValleyCloudSea } from './valley-cloud-sea';
+import type { SpawnShoreGrass } from '../rendering/spawn-shore-grass';
 import { DayNightCycle } from './day-night';
 import { atmosphereUniforms } from '../rendering/aerial-perspective';
 import { valleyArtAt } from '../world/geo/valley-art';
@@ -94,7 +95,7 @@ export class Atmosphere {
         }
     }
 
-    constructor(scene: T.Scene, quality: Quality) {
+    constructor(scene: T.Scene, quality: Quality, spawnShoreGrass?: SpawnShoreGrass) {
         this.scene = scene;
         this.quality = quality;
         scene.fog = new T.FogExp2('#cfe4e2', 0.0011);
@@ -125,7 +126,7 @@ export class Atmosphere {
         scene.add(this.fill);
         this.sky = new Sky(scene);
         this.sunDirection = this.sky.sunDirection;
-        this.water = new Water(scene, this.sunDirection);
+        this.water = new Water(scene, this.sunDirection, spawnShoreGrass);
         this.petals = new Petals(scene, quality);
         this.birds = new SkyBirds(scene, quality, this.sunDirection);
         this.fireflies = new Fireflies(scene, quality);

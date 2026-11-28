@@ -24,6 +24,8 @@ import {populateBayShore} from './bay-shore-details';
 import {ValleyCrops} from '../flora/valley-crops';
 import {populateBambooGrove} from './bamboo-grove';
 import {populateCreekIdyll} from './creek-idyll';
+import {populateSpawnShrine, SpawnShrine} from './spawn-shrine';
+import type { SpawnShoreGrass } from '../../rendering/spawn-shore-grass';
 
 function grove(group: T.Group, cx: number, cz: number, radius: number, count: number, wind: Vegetation['uniforms'], island?: typeof floatingIslands[number]) {
     const trunk = new T.InstancedMesh(makeSakuraTrunk(), toonMaterial('#856b59', { vertexColors: true }), count);
@@ -203,8 +205,9 @@ export class MapExpansion {
     private active = new Map<string, T.Group>();
     private time = { value: 0 };
     private preloading = false;
+    private spawnShrine?: SpawnShrine;
     private floraWind={time:this.time,player:{value:new T.Vector3(1e6,1e6,1e6)},playerVel:{value:new T.Vector3()}};
-    constructor(private scene: T.Scene) { }
+    constructor(private scene: T.Scene, private spawnShoreGrass?: SpawnShoreGrass) { }
     setWind(uniforms:Vegetation['uniforms']){this.floraWind=uniforms;}
     /**
      * Build the two landmark regions once, while the character GLB is still
@@ -231,6 +234,7 @@ export class MapExpansion {
             this.ensureRegion(id);
             await nextFrame();
         }
+        if (!isDisposed()) await this.spawnShrine?.ready;
         this.preloading = false;
     }
 
@@ -272,7 +276,7 @@ export class MapExpansion {
         const evictRadius = detectDevice().isMobile ? 2200 : 4200;
         for (const [id, group] of this.active) {
             const region = regions.find(r => r.id === id)!;
-            if (id === peakland.id || id === 'sky') continue;
+            if (id === peakland.id || id === 'sky' || id === 'village') continue;
             if (Math.hypot(position.x - region.x, position.z - region.z) > evictRadius) {
                 this.scene.remove(group);
                 this.release(group);
@@ -304,6 +308,7 @@ export class MapExpansion {
         if (camera && plants instanceof PeaklandFlora) plants.update(time,camera,viewHeight,pixelBudget);
         const crops=this.active.get('village')?.children.find(o=>o instanceof ValleyCrops);
         if(camera && crops instanceof ValleyCrops)crops.update(camera);
+        if(camera && this.spawnShrine)this.spawnShrine.update(camera);
     }
     private create(r: Region) {
         const group = new T.Group();
@@ -316,6 +321,7 @@ export class MapExpansion {
         if(r.id==='village'){
             populateValleyStoneRing(group);
             populateCreekIdyll(group,this.floraWind);
+            this.spawnShrine = populateSpawnShrine(group,this.time,this.floraWind,this.spawnShoreGrass);
             group.add(new ValleyCrops(this.floraWind));
         }
         if(r.id==='lake')populateBayShore(group,this.floraWind);
@@ -369,15 +375,15 @@ export class MapExpansion {
             o.dispose();
         for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
             materials.add(m);
-            const map = (m as T.MeshBasicMaterial).map;
-            if (map)
-                textures.add(map);
+            const std = m as T.MeshStandardMaterial;
+            if (std.map) textures.add(std.map);
+            if (std.normalMap) textures.add(std.normalMap);
         }
     } }); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose()); }
     dispose() { for (const group of this.active.values()) {
         this.scene.remove(group);
         this.release(group);
-    } this.active.clear(); }
+    } this.active.clear(); this.spawnShrine = undefined; }
 }
 
 

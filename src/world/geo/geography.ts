@@ -1,5 +1,6 @@
 import { bounds, rawHeightAt, waterSurfaceAt } from './geo-core';
 import { plannedRoads } from './route-plan';
+import { readArtStyle } from '../../config/settings';
 export const gridStep = 8;
 export const gridWidth = 1 + (bounds.right - bounds.left) / gridStep;
 export const gridDepth = 1 + (bounds.south - bounds.north) / gridStep;
@@ -54,6 +55,20 @@ export function geographyGrid() {
             const u = Math.max(0, Math.min(1, (12 - d) / 9)), weight = u * u * (3 - 2 * u);
             data[i] = data[i] * (1 - weight) + target * weight;
         }
+    // Grade a small shelf into the baked field so terrain, water and collision
+    // all see the same cut. The riverward height samples are left in place.
+    if (readArtStyle() === 'guofeng') {
+        const xSamples = [72, 80, 88, 96];
+        const shelf = [
+            [152, [12.35, 13.53, 14.25, 18.08]],
+            [160, [13.04, 13.48, 14.08, 18.18]],
+            [168, [12.60, 13.47, 14.50, 19.12]],
+        ] as const;
+        for (const [z, elevations] of shelf) {
+            const row = (z - bounds.north) / gridStep * gridWidth;
+            xSamples.forEach((x, i) => { data![row + (x - bounds.left) / gridStep] = elevations[i]; });
+        }
+    }
     for (const road of roads)
         for (const p of road.points)
             if (!p.bridge)

@@ -15,6 +15,7 @@ import {BridgeReflection} from './bridge-reflection';
 import {aerialPerspectiveGLSL, atmosphereUniforms} from '../rendering/aerial-perspective';
 import {spellLightUniforms} from '../effects/spell-lights';
 import {CascadeDetails} from './cascade-details';
+import type { SpawnShoreGrass } from '../rendering/spawn-shore-grass';
 const WAKE_POINTS = 16;
 
 /**
@@ -40,8 +41,8 @@ export class Water {
     private lastEmit = -1;
     readonly bridgeReflection: BridgeReflection;
 
-    constructor(scene: T.Scene, sunDirection: T.Vector3) {
-        this.cascadeDetails=new CascadeDetails(scene);
+    constructor(scene: T.Scene, sunDirection: T.Vector3, spawnShoreGrass?: SpawnShoreGrass) {
+        this.cascadeDetails=new CascadeDetails(scene,spawnShoreGrass);
         this.sunDirection = sunDirection;this.spray=new WaterSpray(scene);
         this.bridgeReflection = new BridgeReflection(scene);
         const wake = Array.from({ length: WAKE_POINTS }, () => new T.Vector4());
@@ -297,7 +298,7 @@ export class Water {
     }
 
     update(time: number, camera: T.Camera, player: Player) {
-        this.cascadeDetails.update(time);
+        this.cascadeDetails.update(time,camera);
         this.uniforms.uTime.value = time;
         // Authored water shelves stay on a fixed world grid, avoiding snapping artefacts.
 

@@ -10,6 +10,8 @@ import {valleyArtGLSL} from '../world/geo/valley-art';
 import {clearingLightGLSL} from './clearing-light';
 import {riverCorridorGLSL} from './river-corridor-texture';
 import {valleyLandmarksGLSL} from '../world/geo/valley-landmarks';
+import {shrinePathGLSL} from '../world/geo/spawn-site';
+import {spawnShoreGrassGLSL} from './spawn-shore-grass';
 import {fireballScorchSlots} from '../effects/fireball-impact';
 const fieldGLSL=`uniform vec4 uWalkTrail[8];
 vec2 walkBend(vec2 p,float ground){vec2 bend=vec2(0.);float strongest=0.;for(int i=0;i<8;i++){vec4 stamp=uWalkTrail[i];vec2 delta=p-stamp.xz;float d=length(delta);float strength=(1.-smoothstep(.2,1.35,d))*stamp.w*(1.-smoothstep(.5,1.8,abs(ground-stamp.y)));if(strength>strongest){strongest=strength;bend=delta/max(d,.12)*strength;}}float len=length(bend);return bend/max(1.,len)*1.1;}
@@ -27,6 +29,12 @@ ${valleyArtGLSL}
 ${clearingLightGLSL}
 ${riverCorridorGLSL}
 ${valleyLandmarksGLSL}
+#if MEADOW_GUOFENG
+${shrinePathGLSL}
+#endif
+#if MEADOW_SHORE_MASK
+${spawnShoreGrassGLSL}
+#endif
 vec4 mHash(vec2 p){return fract(sin(vec4(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)),dot(p,vec2(419.2,371.9)),dot(p,vec2(173.8,217.1))))*43758.5453);}
 float mNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mHash(i).x,mHash(i+vec2(1.,0.)).x,f.x),mix(mHash(i+vec2(0.,1.)).x,mHash(i+1.).x,f.x),f.y);}
 uniform vec4 uFireballScorches[${fireballScorchSlots}];
@@ -48,8 +56,10 @@ vec4 meadowAt(vec2 p){
  vec2 q=(p-uField.xy)/uField.z;
  if(any(lessThan(q,vec2(0.)))||any(greaterThan(q,uFieldSize-1.)))return vec4(0.);
  vec2 i=min(floor(q),uFieldSize-2.),f=q-i,uv=(i+.5)/uFieldSize,d=1./uFieldSize;
- vec4 field=mix(mix(texture2D(uMeadow,uv),texture2D(uMeadow,uv+vec2(d.x,0.)),f.x),
+ return mix(mix(texture2D(uMeadow,uv),texture2D(uMeadow,uv+vec2(d.x,0.)),f.x),
             mix(texture2D(uMeadow,uv+vec2(0.,d.y)),texture2D(uMeadow,uv+d),f.x),f.y);
+}
+void applyBankHabitat(vec2 p,inout vec4 field){
  if(!uIslandField){
    vec4 bank=riverbankHabitat(p);
    float foliage=mix(.92,1.42,smoothstep(.26,.68,bank.r))*(1.-.45*bank.g);
@@ -57,7 +67,10 @@ vec4 meadowAt(vec2 p){
    field.g=min(1.,field.g*mix(1.,foliage,bank.a))*(1.-.18*bridgeShade(p));
    field.b=mix(field.b,bank.r,bank.a);
  }
- return field;
+}
+bool outsideShell(vec2 p){
+ vec2 offset=p-cameraPosition.xz;
+ return dot(offset,offset)>=uShell.w*uShell.w;
 }
 float groundMask(vec4 field, vec2 margins){
  return uIslandField ? smoothstep(.04,.28,field.a) : smoothstep(margins.x,margins.y,field.a);
@@ -78,6 +91,7 @@ void hideBlade(out vec3 P,out vec3 N){
 export const placementGLSL=fieldGLSL+`
 void placeBlade(out vec3 P,out vec3 N){
  float id=float(gl_InstanceID);vec2 cell=uOrigin+vec2(mod(id,uGrid),floor(id/uGrid));vec4 rnd=mHash(cell+uBlade.w*17.31);vec2 xz=(cell+mix(vec2(.08),vec2(.92),rnd.xy))*uSpacing;
+ if(outsideShell(xz)){hideBlade(P,N);return;}
  vec4 field=meadowAt(xz);vec3 root=vec3(xz.x,field.r-.035,xz.y);float d=distance(root,cameraPosition);
  float fade=smoothstep(uShell.x,uShell.y,d)*(1.-smoothstep(uShell.z,uShell.w,d));
  float visibleSize=projectedCoverage(root,d,uBlade.x*2.,uBlade.y);
@@ -85,6 +99,11 @@ void placeBlade(out vec3 P,out vec3 N){
  vec4 clip=projectionMatrix*viewMatrix*vec4(root,1.);
  if(abs(clip.x)>clip.w*1.12||abs(clip.y)>clip.w*1.2||clip.w<0.)fade=0.;
  if(fade<.002){hideBlade(P,N);return;}
+ #if MEADOW_SHORE_MASK
+ if(!uIslandField)fade*=shoreGrassCover(xz);
+ if(fade<.002){hideBlade(P,N);return;}
+ #endif
+ applyBankHabitat(xz,field);
  vec4 clearing=uIslandField?vec4(0.):clearingLight(xz);
  vec4 corridor=uIslandField?vec4(0.):riverCorridor(xz);
  float mud=smoothstep(.12,.73,1.-corridor.r*2.);
@@ -96,6 +115,9 @@ void placeBlade(out vec3 P,out vec3 N){
  float yard=uIslandField?0.:villageGround(xz);
  float shoulder=groundMask(field,vec2(1.9,5.8))*(1.-yard);
  if(!uIslandField)shoulder*=1.-max(valleyFields(xz).x,valleyRuinGround(xz));
+ #if MEADOW_GUOFENG
+ if(!uIslandField)shoulder*=shrineGrassCover(xz);
+ #endif
  fade*=smoothstep(.02,.28,field.g)*step(rnd.z,field.g*1.58)*shoulder;
  if(fade<.002){hideBlade(P,N);return;}
  vec4 cl=mHash(floor(xz/.63));
@@ -212,12 +234,23 @@ void hideFlower(out vec3 P,out vec3 N){
 }
 void placeBlade(out vec3 P,out vec3 N){
  float id=float(gl_InstanceID);vec2 cell=uOrigin+vec2(mod(id,uGrid),floor(id/uGrid));vec4 rnd=mHash(cell+uBlade.w*17.31);vec2 xz=(cell+mix(vec2(.06),vec2(.94),rnd.xy))*uSpacing;
+ if(outsideShell(xz)){hideFlower(P,N);return;}
  vec4 field=meadowAt(xz);vec3 root=vec3(xz.x,field.r-.035,xz.y);float d=distance(root,cameraPosition);
  float share=smoothstep(uShell.x,uShell.y,d)*(1.-smoothstep(uShell.z,uShell.w,d));
  share*=projectedCoverage(root,d,uBlade.x*2.2,uBlade.y*.60);
  vec4 clip=projectionMatrix*viewMatrix*vec4(root,1.);
+ if(share<=0.||abs(clip.x)>clip.w*1.1||abs(clip.y)>clip.w*1.2||clip.w<0.){
+   hideFlower(P,N);return;
+ }
+ applyBankHabitat(xz,field);
  float groundFade=smoothstep(.10,.41,field.g)*groundMask(field,vec2(3.2,5.6));
- if(share<=0.||groundFade<.002||abs(clip.x)>clip.w*1.1||abs(clip.y)>clip.w*1.2||clip.w<0.){
+ #if MEADOW_GUOFENG
+ if(!uIslandField)groundFade*=shrineGrassCover(xz);
+ #endif
+ #if MEADOW_SHORE_MASK
+ if(!uIslandField)groundFade*=shoreGrassCover(xz);
+ #endif
+ if(groundFade<.002){
    hideFlower(P,N);return;
  }
  vec4 clearing=uIslandField?vec4(0.):clearingLight(xz);

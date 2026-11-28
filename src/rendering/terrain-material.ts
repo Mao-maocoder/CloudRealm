@@ -17,6 +17,7 @@ import {valleyLandmarksGLSL} from '../world/geo/valley-landmarks';
 import {bossWastelandGLSL} from '../world/geo/boss-territories';
 import {canopyShadeGLSL,makeCanopyShade} from './canopy-shade';
 import {cascadeCliffGLSL} from './cascade-cliff';
+import {shrinePathGLSL} from '../world/geo/spawn-site';
 
 // A seamless square of short, overlapping grass strokes, filtered into the
 // terrain mipmaps as individual blades disappear across the valley.
@@ -115,6 +116,7 @@ export function createTerrainMaterial() {
         ${riverCorridorGLSL}
         ${grassCanopyGLSL}
         ${valleyLandmarksGLSL}
+        ${shrinePathGLSL}
         ${bossWastelandGLSL}
         ${canopyShadeGLSL}
         vec4 rockTriplanar(vec3 p,vec3 n,float scale){
@@ -307,6 +309,10 @@ export function createTerrainMaterial() {
                 clay*=1.-grains*.29;
                 clay=mix(clay,sward,.25*smoothstep(1.25,3.85,roadDistance)*fine);
                 float pathMask=max(trail*.92,yard);
+                if(gfValley>.5 && worldUV.x>76. && worldUV.x<102. && worldUV.y>146. && worldUV.y<160.) {
+                    float shrineTrail=1.-smoothstep(.72,1.62,shrinePathDistance(worldUV)+(fine-.5)*.30);
+                    pathMask=max(pathMask,shrineTrail*.94);
+                }
                 grassRoadMask=1.-smoothstep(.06,.62,pathMask);
                 diffuseColor.rgb=mix(diffuseColor.rgb,mix(packed,clay,valley),pathMask);
             }

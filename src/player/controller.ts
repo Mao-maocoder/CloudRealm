@@ -1,8 +1,9 @@
 import{resolveStructures,structureFloor}from '../world/physics/solid-world';
 import{waterSurfaceAt}from '../world/geo/geo-core';
 import * as T from 'three';
-import { config } from '../config/settings';
+import { config, readArtStyle } from '../config/settings';
 import { heightAt } from '../world/geo/height';
+import { shrineFloor, shrineHeading, valleySpawn } from '../world/geo/spawn-site';
 import { Input } from './input';
 import { Avatar } from './avatar';
 import { radialShadowTexture } from '../rendering/materials';
@@ -107,9 +108,10 @@ export class Player {
     }
 
     reset() {
-        this.position.set(79, 0, 160);
-        this.position.y = this.floor(this.position.x, this.position.z);
-        this.place(false, 0, -.12);
+        this.position.set(valleySpawn.x, 0, valleySpawn.z);
+        const guofeng = readArtStyle() === 'guofeng';
+        this.position.y = guofeng ? shrineFloor : this.floor(this.position.x, this.position.z);
+        this.place(false, guofeng ? shrineHeading : 0, -.12);
     }
     solidFloor(x: number, z: number, fromY = this.position.y) {
         return Math.max(structureFloor(x, z, fromY), heightAt(x, z), floatingFloor(x, z, fromY));

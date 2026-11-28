@@ -3,19 +3,27 @@ import { mainRiver, rivers, waterfalls } from '../world/geo/geo-core';
 import { heightAt, randomAt, trailDistance } from '../world/geo/height';
 import { addSolid, releaseSolids } from '../world/physics/solid-world';
 import { makeShoreStoneGeometry, makeShoreStoneMaterial } from '../rendering/shore-stone';
+import { spawnShoreBounds, type SpawnShoreGrass } from '../rendering/spawn-shore-grass';
+import { shrineFloor, shrineRadius, valleySpawn } from '../world/geo/spawn-site';
 
 /** Stones and spray follow the same stream samples as the water and carved bed. */
 export class CascadeDetails extends T.Group {
     private readonly time = {value:0};
-    private readonly banks:T.InstancedMesh<T.BufferGeometry,T.MeshStandardMaterial>[];
+    private readonly bankMaterial = makeShoreStoneMaterial(.92);
+    private readonly bankGeometry = Array.from({length:3}, (_, form) => ({
+        near: makeShoreStoneGeometry(form),
+        far: makeShoreStoneGeometry(form, 1),
+    }));
+    private readonly banks: {mesh: T.InstancedMesh; form: number}[];
     private readonly spray:T.InstancedMesh<T.PlaneGeometry,T.ShaderMaterial>;
+    private nextBankDetail = -Infinity;
 
-    constructor(scene:T.Scene) {
+    constructor(scene:T.Scene, private spawnShoreGrass?: SpawnShoreGrass) {
         super();
         this.name='雪岭水岸与瀑底水雾';
         this.banks=this.makeBanks();
         this.spray=this.makeSpray();
-        this.add(...this.banks,this.spray);
+        this.add(...this.banks.map(({mesh}) => mesh),this.spray);
         scene.add(this);
     }
 
@@ -38,15 +46,19 @@ export class CascadeDetails extends T.Group {
                 }
             }
         }
-        const batches=Array.from({length:3},()=>[] as typeof placements);
+        const batches = new Map<string, {form: number; stones: typeof placements}>();
         for(const placement of placements){
-            const form=Math.floor(randomAt(placement.x,placement.z,661)*batches.length);
-            batches[form].push(placement);
+            const {x,z} = placement;
+            const form=Math.floor(randomAt(x,z,661)*this.bankGeometry.length);
+            const key = `${Math.floor(x/256)},${Math.floor(z/256)},${form}`;
+            const batch = batches.get(key) ?? {form, stones: []};
+            batch.stones.push(placement);
+            batches.set(key, batch);
         }
-        const material=makeShoreStoneMaterial(.92);
-        const transform=new T.Object3D(), color=new T.Color();
-        return batches.map((batch,form)=>{
-            const stones=new T.InstancedMesh(makeShoreStoneGeometry(form),material,batch.length);
+        const transform=new T.Object3D(), color=new T.Color(), box=new T.Box3();
+        return [...batches.values()].map(({form, stones:batch})=>{
+            const { near, far } = this.bankGeometry[form];
+            const stones=new T.InstancedMesh(near,this.bankMaterial,batch.length);
             stones.name='河岸 · 岩塊 '+(form+1);
             batch.forEach(({x,y,z,size,rank},i)=>{
                 const tone=randomAt(x,z,663);
@@ -54,6 +66,27 @@ export class CascadeDetails extends T.Group {
                 transform.scale.set(size*(1.13+rank*.42),size*(.62+tone*.11),size*(.76+.42*rank));
                 transform.rotation.set((rank-.5)*.35,rank*6.28,(rank-.48)*.4);
                 transform.updateMatrix();
+                if (this.spawnShoreGrass && x > valleySpawn.x - 9 && x < valleySpawn.x
+                    && Math.abs(z - valleySpawn.z) < 8) {
+                    box.copy(near.boundingBox!).applyMatrix4(transform.matrix);
+                    const dx = Math.max(box.min.x - valleySpawn.x, valleySpawn.x - box.max.x, 0);
+                    const dz = Math.max(box.min.z - valleySpawn.z, valleySpawn.z - box.max.z, 0);
+                    if (box.max.y > shrineFloor - .15 && dx * dx + dz * dz < shrineRadius ** 2) {
+                        // Set the overlapping bank rock back from the paved rim.
+                        x -= 1.65;
+                        y = heightAt(x,z);
+                        transform.position.set(x,y-size*.18,z);
+                        transform.updateMatrix();
+                    }
+                }
+                if (this.spawnShoreGrass) {
+                    const pad = size * 2 + spawnShoreBounds.reach;
+                    if (x + pad >= spawnShoreBounds.left && x - pad <= spawnShoreBounds.right
+                        && z + pad >= spawnShoreBounds.north && z - pad <= spawnShoreBounds.south) {
+                        box.copy(far.boundingBox!).applyMatrix4(transform.matrix);
+                        this.spawnShoreGrass.addStone(far, transform.matrix, box);
+                    }
+                }
                 stones.setMatrixAt(i,transform.matrix);
                 stones.setColorAt(i,color.set(tone>.67?'#c9bd9f':tone>.35?'#adb2aa':'#939b98'));
                 if(size>2.1){
@@ -63,7 +96,11 @@ export class CascadeDetails extends T.Group {
             });
             stones.receiveShadow=true;
             stones.computeBoundingSphere();
-            return stones;
+            const nearBounds = stones.boundingSphere!.clone();
+            stones.geometry = far;
+            stones.computeBoundingSphere();
+            stones.boundingSphere!.union(nearBounds);
+            return {mesh: stones, form};
         });
     }
 
@@ -119,16 +156,28 @@ export class CascadeDetails extends T.Group {
         return mesh;
     }
 
-    update(time:number) { this.time.value=time; }
+    update(time:number, camera:T.Camera) {
+        this.time.value=time;
+        if (time < this.nextBankDetail) return;
+        this.nextBankDetail = time + .15;
+        for (const {mesh, form} of this.banks) {
+            const {near, far} = this.bankGeometry[form];
+            const distance = mesh.boundingSphere!.distanceToPoint(camera.position);
+            mesh.geometry = distance < (mesh.geometry === near ? 240 : 200) ? near : far;
+        }
+    }
 
     dispose() {
         releaseSolids(this);
         this.removeFromParent();
-        for(const mesh of [...this.banks,this.spray]){
-            mesh.dispose();
-            mesh.geometry.dispose();
+        for(const {mesh} of this.banks) mesh.dispose();
+        for(const {near,far} of this.bankGeometry) {
+            near.dispose();
+            far.dispose();
         }
-        this.banks[0].material.dispose();
+        this.bankMaterial.dispose();
+        this.spray.dispose();
+        this.spray.geometry.dispose();
         this.spray.material.dispose();
     }
 }
