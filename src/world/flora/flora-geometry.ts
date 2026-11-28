@@ -35,6 +35,21 @@ function branch(points: T.Vector3[], radius: number, tip: number, segments = 7, 
     g.computeVertexNormals();
     return g;
 }
+/** Bound an instanced tree batch for frustum culling across both geometry levels. */
+export function computeTreeBatchBounds(mesh: T.InstancedMesh, near: T.BufferGeometry, far: T.BufferGeometry, windPadding = 0) {
+    const current = mesh.geometry;
+    mesh.geometry = near;
+    mesh.computeBoundingSphere();
+    if (far !== near) {
+        const nearBounds = mesh.boundingSphere!.clone();
+        mesh.geometry = far;
+        mesh.computeBoundingSphere();
+        mesh.boundingSphere!.union(nearBounds);
+    }
+    mesh.boundingSphere!.radius += windPadding;
+    mesh.geometry = current;
+}
+
 export function makeTreeTrunk(kind: TreeKind) {
     const h = kind === 'pine' ? 9.5 : kind === 'broadleaf' ? 8.3 : 6.7, parts: T.BufferGeometry[] = [];
     const lean = kind === 'sakura' ? 1.05 : kind === 'pine' ? .32 : .72;

@@ -3,15 +3,15 @@ import { readArtStyle } from '../config/settings';
 import { atmosphereUniforms } from '../rendering/aerial-perspective';
 
 /**
- * Low-cost 2-layer drifting valley cloud sea for high-altitude overlooks
+ * Three drifting valley cloud layers for high-altitude overlooks
  * (inspired by Ni Shui Han / Eastern xianxia mountain overlooks).
  * Automatically fades in when camera climbs above ~95m and stays invisible
  * on the valley floor so ground gameplay is completely unobstructed.
- * Cost: 2 draw calls, 4 triangles total, zero raymarching.
+ * Each visible layer is one plane with no raymarching.
  */
 export class ValleyCloudSea {
     readonly group = new T.Group();
-    private readonly layers: Array<{ mesh: T.Mesh; material: T.ShaderMaterial; minCamY: number }> = [];
+    private readonly layers: Array<{ mesh: T.Mesh; material: T.ShaderMaterial; minCamY: number; fullCamY: number }> = [];
 
     constructor(scene: T.Scene) {
         this.group.name = 'valley-cloud-sea';
@@ -39,8 +39,7 @@ export class ValleyCloudSea {
                     uDrift: { value: cfg.drift },
                     uOpacity: { value: cfg.opacity },
                     uSeed: { value: cfg.seed },
-                    uMinCamY: { value: cfg.minCamY },
-                    uFullCamY: { value: cfg.fullCamY },
+                    uAltitudeFade: { value: 0 },
                     uAtmoMist: atmosphereUniforms.uAtmoMist,
                     uAtmoSunAir: atmosphereUniforms.uAtmoSunAir,
                     uAtmoAir: atmosphereUniforms.uAtmoAir,
@@ -50,19 +49,27 @@ export class ValleyCloudSea {
                     uNightFactor: atmosphereUniforms.uNightFactor,
                 },
                 vertexShader: `
+                    uniform float uAtmoLight, uDuskFactor, uNightFactor;
+                    uniform vec3 uAtmoMist, uAtmoSunAir, uAtmoAir;
                     varying vec3 vWorldPos;
+                    varying vec3 vShadowColor, vLitColor;
                     void main() {
                         vec4 wp = modelMatrix * vec4(position, 1.0);
                         vWorldPos = wp.xyz;
+                        vec3 shadowCol = mix(uAtmoAir * 0.96, uAtmoMist * 0.92, 0.62);
+                        vec3 litCol = mix(uAtmoMist * 1.12, vec3(1.0, 0.98, 0.95), 0.52 * uAtmoLight);
+                        litCol = mix(litCol, mix(vec3(0.96, 0.86, 0.80), uAtmoSunAir * 1.08, 0.5), uDuskFactor * 0.75);
+                        vLitColor = mix(litCol, vec3(0.24, 0.34, 0.52), uNightFactor * 0.85);
+                        vShadowColor = mix(shadowCol, vec3(0.11, 0.17, 0.30), uNightFactor * 0.85);
                         gl_Position = projectionMatrix * viewMatrix * wp;
                     }
                 `,
                 fragmentShader: `
-                    uniform float uTime, uScale, uOpacity, uSeed, uMinCamY, uFullCamY;
-                    uniform float uAtmoLight, uDuskFactor, uNightFactor;
+                    uniform float uTime, uScale, uOpacity, uSeed, uAltitudeFade, uNightFactor;
                     uniform vec2 uDrift;
-                    uniform vec3 uAtmoMist, uAtmoSunAir, uAtmoAir, uAtmoSunDir;
+                    uniform vec3 uAtmoSunAir, uAtmoSunDir;
                     varying vec3 vWorldPos;
+                    varying vec3 vShadowColor, vLitColor;
 
                     float cHash(vec2 p) {
                         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -88,12 +95,14 @@ export class ValleyCloudSea {
                     }
 
                     void main() {
-                        // Only visible when camera overlooks from altitude
-                        float altVis = smoothstep(uMinCamY, uFullCamY, cameraPosition.y);
-                        if (altVis < 0.004) discard;
-
                         vec2 delta = vWorldPos.xz - cameraPosition.xz;
-                        float dist = length(delta);
+                        float distSquared = dot(delta, delta);
+                        // Leave the fragment transparent before evaluating any cloud noise.
+                        if (distSquared <= 140.0 * 140.0 || distSquared >= 5600.0 * 5600.0) {
+                            gl_FragColor = vec4(0.0);
+                            return;
+                        }
+                        float dist = sqrt(distSquared);
                         // Keep immediate foreground crisp, let clouds billow across mid-valley & hide map-edge seams
                         float nearFade = smoothstep(140.0, 620.0, dist);
                         float farFade = 1.0 - smoothstep(3200.0, 5600.0, dist);
@@ -110,22 +119,17 @@ export class ValleyCloudSea {
 
                         // Thicken gently toward outer valley horizon to seamlessly veil the playable terrain boundary
                         float edgeVeil = smoothstep(1050.0, 2600.0, dist) * 0.48;
-                        float alpha = clamp((density + edgeVeil * (0.45 + 0.55 * wisps)) * nearFade * farFade * altVis * uOpacity, 0.0, 0.92);
-                        if (alpha < 0.005) discard;
+                        float alpha = clamp((density + edgeVeil * (0.45 + 0.55 * wisps)) * nearFade * farFade * uAltitudeFade * uOpacity, 0.0, 0.92);
+                        if (alpha < 0.005) {
+                            gl_FragColor = vec4(0.0);
+                            return;
+                        }
 
                         // Luminous pearlescent sunlit tops + soft cool misty shadow hollows
                         vec3 viewDir = normalize(vWorldPos - cameraPosition);
                         float sunAlign = pow(max(0.0, dot(viewDir, normalize(uAtmoSunDir))), 2.6);
-                        vec3 shadowCol = mix(uAtmoAir * 0.96, uAtmoMist * 0.92, 0.62);
-                        vec3 litCol = mix(uAtmoMist * 1.12, vec3(1.0, 0.98, 0.95), 0.52 * uAtmoLight);
-                        // Ethereal warm peach-gold scatter during Dawn/Dusk (like Ni Shui Han overlook)
-                        litCol = mix(litCol, mix(vec3(0.96, 0.86, 0.80), uAtmoSunAir * 1.08, 0.5), uDuskFactor * 0.75);
-                        // Quiet silver-blue moonlight at night
-                        litCol = mix(litCol, vec3(0.24, 0.34, 0.52), uNightFactor * 0.85);
-                        shadowCol = mix(shadowCol, vec3(0.11, 0.17, 0.30), uNightFactor * 0.85);
-
                         float crest = smoothstep(0.32, 0.82, wisps) * (0.62 + 0.38 * detail);
-                        vec3 col = mix(shadowCol, litCol, crest);
+                        vec3 col = mix(vShadowColor, vLitColor, crest);
                         col += uAtmoSunAir * sunAlign * 0.22 * (1.0 - uNightFactor * 0.75);
 
                         gl_FragColor = vec4(col, alpha);
@@ -139,7 +143,7 @@ export class ValleyCloudSea {
             mesh.frustumCulled = false;
             mesh.renderOrder = 1;
             this.group.add(mesh);
-            this.layers.push({ mesh, material: mat, minCamY: cfg.minCamY });
+            this.layers.push({ mesh, material: mat, minCamY: cfg.minCamY, fullCamY: cfg.fullCamY });
         }
         scene.add(this.group);
     }
@@ -147,17 +151,19 @@ export class ValleyCloudSea {
     update(time: number, camera: T.Camera) {
         if (!this.layers.length) return;
         const camY = camera.position.y;
-        const visible = camY > 92;
-        this.group.visible = visible;
-        if (!visible) return;
+        let visible = false;
         for (const layer of this.layers) {
-            const layerVis = camY > layer.minCamY;
+            const fade = T.MathUtils.smoothstep(camY, layer.minCamY, layer.fullCamY);
+            const layerVis = fade >= 0.004;
             layer.mesh.visible = layerVis;
             if (!layerVis) continue;
+            visible = true;
+            layer.material.uniforms.uAltitudeFade.value = fade;
             layer.material.uniforms.uTime.value = time;
             layer.mesh.position.x = camera.position.x;
             layer.mesh.position.z = camera.position.z;
         }
+        this.group.visible = visible;
     }
 
     dispose() {

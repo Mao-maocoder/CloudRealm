@@ -3,13 +3,13 @@ import { heightAt, slopeAt } from '../geo/height';
 import { waterSurfaceAt } from '../geo/geo-core';
 import { formations, geologyRandom, gorgeDistance, peakCreek, terraces } from '../geo/peakland-plan';
 import { rockPoint, rockSupport } from '../biomes/peakland-rock';
-import { makeLeafTexture, makeTreeCanopy, makeTreeTrunk, makeValleyShrub } from './flora-geometry';
+import { computeTreeBatchBounds, makeLeafTexture, makeTreeCanopy, makeTreeTrunk, makeValleyShrub } from './flora-geometry';
 import { loadSharedGuofengTreeKit, windify, type WindUniforms } from './vegetation';
 import { readArtStyle } from '../../config/settings';
 
 type Plant = 'pine' | 'broadleaf' | 'shrub' | 'stone';
-type Placement = { x:number; y:number; z:number; size:number; angle:number; lean:number; green:number };
-type Tile = { x:number; z:number; kind:Plant; plants:Placement[] };
+type Placement = { x:number; y:number; z:number; size:number; angle:number; lean:number; green:number; styleIndex:number };
+type Tile = { kind:Plant; plants:Placement[] };
 
 function stoneGeometry(detailed: boolean) {
     const geo = new T.IcosahedronGeometry(1, detailed ? 1 : 0).scale(1.04, .63, .84).translate(0, .31, 0);
@@ -41,7 +41,7 @@ for(const sample of rockSamples){
         }
 }
 const nearbyRocks=(x:number,z:number)=>rockGrid.get(Math.floor(x/rockCell)+','+Math.floor(z/rockCell))??noRocks;
-const tileWidth=1024;
+const tileWidth=768;
 
 export class PeaklandFlora extends T.Group {
     private readonly batches:{mesh:T.InstancedMesh;fine:T.BufferGeometry;coarse:T.BufferGeometry;length:number}[]=[];
@@ -52,11 +52,16 @@ export class PeaklandFlora extends T.Group {
         super();
         this.name='peakland-ecology';
         const tiles=new Map<string,Tile>();
+        const styleCounts = new Map<string, number>();
         const scatter=(bucket:keyof typeof this.counts,kind:Plant,x:number,y:number,z:number,size:number,seed:number,light:number,lean=.13)=>{
             if(excluded(x,z))return;
             const ix=Math.floor(x/tileWidth),iz=Math.floor(z/tileWidth),key=[ix,iz,kind].join(',');
-            const tile=tiles.get(key)??{x:ix*tileWidth,z:iz*tileWidth,kind,plants:[]};
-            tile.plants.push({x,y,z,size,angle:geologyRandom(seed,31)*Math.PI*2,lean,green:.73+.22*light+.19*geologyRandom(seed,87)});
+            const tile=tiles.get(key)??{kind,plants:[]};
+            // Keep the original color and scale variation after subdividing the render batches.
+            const styleKey = `${Math.floor(x/1024)},${Math.floor(z/1024)},${kind}`;
+            const styleIndex = styleCounts.get(styleKey) ?? 0;
+            styleCounts.set(styleKey, styleIndex + 1);
+            tile.plants.push({x,y,z,size,angle:geologyRandom(seed,31)*Math.PI*2,lean,green:.73+.22*light+.19*geologyRandom(seed,87),styleIndex});
             tiles.set(key,tile);
             this.counts[bucket]++;
         };
@@ -168,23 +173,21 @@ export class PeaklandFlora extends T.Group {
                 for (const [i, p] of tile.plants.entries()) {
                     dummy.position.set(p.x, p.y, p.z);
                     dummy.rotation.set(p.lean * .42, p.angle, p.lean * .46, 'YXZ');
-                    dummy.scale.set(p.size, p.size * (.84 + .26 * geologyRandom(i, 105)), p.size);
+                    dummy.scale.set(p.size, p.size * (.84 + .26 * geologyRandom(p.styleIndex, 105)), p.size);
                     dummy.updateMatrix();
                     trunk.setMatrixAt(i, dummy.matrix);
                     crown.setMatrixAt(i, dummy.matrix);
                     if (tile.kind === 'pine') {
-                        tint.setHSL(.34 + (i % 5) * .014, isGuofeng ? .22 : .38, .44 * p.green + .14);
+                        tint.setHSL(.34 + (p.styleIndex % 5) * .014, isGuofeng ? .22 : .38, .44 * p.green + .14);
                     } else {
-                        tint.setHSL(.25 + (i % 5) * .018, isGuofeng ? .26 : .48, .46 * p.green + .16);
+                        tint.setHSL(.25 + (p.styleIndex % 5) * .018, isGuofeng ? .26 : .48, .46 * p.green + .16);
                     }
                     crown.setColorAt(i, tint);
                 }
                 trunk.instanceMatrix.needsUpdate = crown.instanceMatrix.needsUpdate = true;
                 if (crown.instanceColor) crown.instanceColor.needsUpdate = true;
                 trunk.computeBoundingSphere();
-                crown.geometry = fine;
-                crown.computeBoundingSphere();
-                crown.geometry = coarse;
+                computeTreeBatchBounds(crown, fine, coarse, .6);
                 trunk.receiveShadow = crown.receiveShadow = false;
                 this.add(trunk, crown);
                 const trunkEntry = { mesh: trunk, fine: trunkGeo, coarse: trunkGeo, length: 12 };
@@ -201,11 +204,11 @@ export class PeaklandFlora extends T.Group {
                     dummy.position.set(p.x, p.y, p.z);
                     dummy.rotation.set(p.lean * .35, p.angle, p.lean * .35, 'YXZ');
                     const s = tile.kind === 'shrub' ? p.size * 1.45 : p.size;
-                    dummy.scale.set(s, s * (.80 + .28 * geologyRandom(i, 107)), s);
+                    dummy.scale.set(s, s * (.80 + .28 * geologyRandom(p.styleIndex, 107)), s);
                     dummy.updateMatrix();
                     mesh.setMatrixAt(i, dummy.matrix);
                     if (tile.kind === 'shrub') {
-                        tint.setHSL(.26 + (i % 4) * .022, .46, .48 * p.green + .12);
+                        tint.setHSL(.26 + (p.styleIndex % 4) * .022, .46, .48 * p.green + .12);
                     } else {
                         tint.setRGB(p.green * 1.04, p.green * .96, p.green * .84);
                     }
@@ -230,10 +233,13 @@ export class PeaklandFlora extends T.Group {
                     item.trunkEntry.fine = pair.trunk;
                     item.trunkEntry.coarse = pair.trunk;
                     item.trunkEntry.mesh.geometry = pair.trunk;
+                    item.trunkEntry.mesh.computeBoundingSphere();
                     const wasFine = item.crownEntry.mesh.geometry === item.crownEntry.fine;
                     item.crownEntry.fine = pair.canopy;
                     item.crownEntry.coarse = pair.canopyFar;
-                    item.crownEntry.mesh.geometry = wasFine ? pair.canopy : pair.canopyFar;
+                    const crown = item.crownEntry.mesh;
+                    crown.geometry = wasFine ? pair.canopy : pair.canopyFar;
+                    computeTreeBatchBounds(crown, pair.canopy, pair.canopyFar, .6);
                 }
             });
         }

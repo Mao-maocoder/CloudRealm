@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { AdaptiveResolutionScaler, detectDevice } from '../config/device';
+import { AdaptiveResolutionScaler, detectDevice, RenderFrameClock } from '../config/device';
 import { config, qualities, readQuality, type Quality } from '../config/settings';
 import { openValleyReference } from '../dev/valley-reference';
 import { Fireball } from '../effects/fireball';
@@ -99,7 +99,7 @@ export class Game {
     readonly wildlife: Wildlife;
     readonly vitals = new PlayerVitals();
     quality = readQuality();
-    private last = 0;
+    private readonly renderClock = new RenderFrameClock();
     private time = 0;
     private accumulator = 0;
     private frames: number[] = [];
@@ -1041,7 +1041,7 @@ export class Game {
         this.paused = document.hidden;
         this.swordArray.setPaused(this.paused);
         this.input.clear();
-        this.last = 0;
+        this.renderClock.reset();
         this.accumulator = 0;
     };
 
@@ -1083,18 +1083,10 @@ export class Game {
     }
 
     private readonly frame = (stamp: number) => {
-        if (this.paused) {
-            this.last = stamp;
-            return;
-        }
-        // Cap render loop to ~60 FPS so 144Hz/165Hz/240Hz gaming laptops don't spin fans at 100% GPU while idle.
-        if (this.last && stamp - this.last < 15.6) return;
-        const raw = this.last ? (stamp - this.last) / 1000 : 1 / 60;
-        this.last = stamp;
-        // Never burn 100% GPU rendering the 3D valley at 60 FPS behind the opaque Welcome loading screen!
-        // This keeps the loading bar & spinner completely smooth and speeds up asset loading/parsing.
-        if (!this.hud.started) return;
-        if (this.hud.started && this.resolutionScaler.sample(raw)) {
+        if (this.paused || !this.hud.started) return;
+        const raw = this.renderClock.step(stamp);
+        if (!raw) return;
+        if (this.resolutionScaler.sample(raw)) {
             this.applyPixelRatio();
         }
         const dt = Math.min(config.maxFrame, raw);

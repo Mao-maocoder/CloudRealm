@@ -39,6 +39,28 @@ const {PlayerVitals} = await import(pathToFileURL(path.join(target, 'player/vita
 const results=[];
 function test(name, run) { run(); results.push({name,passed:true}); console.log('PASS',name); }
 function makePlayer(){const keys=new Set(),pressed=new Set();const input={keys,yaw:0,pitch:0,has:k=>keys.has(k),take:k=>{const p=pressed.has(k);pressed.delete(k);return p;}};return{p:new Player(input,new Scene()),keys,pressed,input};}
+const {AdaptiveResolutionScaler, RenderFrameClock} = await import(pathToFileURL(path.join(target, 'config/device.js')));
+test('frame clock maintains the 60 FPS budget across desktop refresh rates', () => {
+  for (const hz of [60, 75, 90, 120, 144, 165, 240]) {
+    const clock = new RenderFrameClock();
+    const scaler = new AdaptiveResolutionScaler();
+    let rendered = 0;
+    for (let tick = 0; tick < hz * 5; tick++) {
+      const elapsed = clock.step(tick * 1000 / hz);
+      if (!elapsed) continue;
+      rendered++;
+      scaler.sample(elapsed);
+    }
+    assert.ok(Math.abs(rendered - 300) <= 1, `${hz} Hz rendered ${rendered} frames`);
+    assert.equal(scaler.scale, 1, `${hz} Hz should not trigger a resolution drop`);
+  }
+  const clock = new RenderFrameClock();
+  assert.equal(clock.step(0), 1 / 60);
+  assert.equal(clock.step(100), .1);
+  assert.equal(clock.step(105), 0);
+  clock.reset();
+  assert.equal(clock.step(1000), 1 / 60);
+});
 test('fireball charge extends the centered aim and the arc falls onto the selected surface', () => {
   const ground = (x, z) => ({height: 0, kind: x < 0 ? 'water' : 'grass'});
   const camera = new PerspectiveCamera();

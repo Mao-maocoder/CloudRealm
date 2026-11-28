@@ -262,6 +262,7 @@ export class Meadow {
     readonly group = new T.Group();
     readonly time = { value: 0 };
     private readonly focalPixels={value:570};
+    private readonly isGuofeng = readArtStyle() === 'guofeng';
     private readonly ground = groundField();
     private islands?: Field;
     private canyonFields?: Field[];
@@ -303,17 +304,18 @@ export class Meadow {
                 uFocalPixels:this.focalPixels,
             };
             material.userData.uniforms = uniforms;
-            material.customProgramCacheKey = () => flower ? 'meadow-flowers-v4' : 'meadow-grass-v4';
+            material.customProgramCacheKey = () => `meadow-${flower ? 'flowers' : 'grass'}-${this.isGuofeng ? 'guofeng' : 'anime'}`;
             material.onBeforeCompile = shader => {
                 Object.assign(shader.uniforms, uniforms, atmosphereUniforms);
-                shader.vertexShader = 'varying vec3 vBladeWorld;\n' + (flower?flowerPlacementGLSL:placementGLSL)+'\n'+shader.vertexShader
+                const styleDefine = `#define MEADOW_GUOFENG ${Number(this.isGuofeng)}\n`;
+                shader.vertexShader = styleDefine + 'varying vec3 vBladeWorld;\n' + (flower?flowerPlacementGLSL:placementGLSL)+'\n'+shader.vertexShader
                     .replace('#include <beginnormal_vertex>','vec3 bladePosition,bladeNormal;placeBlade(bladePosition,bladeNormal);vec3 objectNormal=bladeNormal;')
                     .replace('#include <begin_vertex>','vec3 transformed=bladePosition;vBladeWorld=bladePosition;');
                 shader.fragmentShader = shader.fragmentShader.replace('#include <lights_lambert_pars_fragment>',T.ShaderChunk.lights_lambert_pars_fragment
                     .replace('float dotNL = saturate( dot( geometryNormal, directLight.direction ) );','float dotNL = saturate( dot( geometryNormal, directLight.direction ) * .38 + .62 );'));
-                shader.fragmentShader = (flower?flowerFragmentGLSL:'')
+                shader.fragmentShader = styleDefine + (flower?flowerFragmentGLSL:'')
                     +`${aerialPerspectiveGLSL}\nuniform vec3 uVegTransColor,uVegRimColor;uniform float uVegTransStrength,uVegRimStrength;\n`
-                    +'varying vec3 vBladeTint,vBladeWorld;varying float vBladeTip,vGfValley;\n'+shader.fragmentShader
+                    +'varying vec3 vBladeTint,vBladeWorld;varying float vBladeTip;const float gfValley=float(MEADOW_GUOFENG);\n'+shader.fragmentShader
                     .replace('#include <fog_fragment>', '')
                     .replace('#include <color_fragment>','#include <color_fragment>\n diffuseColor.rgb*=vBladeTint;'+(flower?flowerColourGLSL:''))
                     .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
@@ -324,16 +326,16 @@ export class Meadow {
                         vec3 grassSunTone = mix(vec3(1.0, 1.02, .98), vec3(1.06, 1.15, .64), uAtmoLight);
                         vec3 gfGrassShade = mix(vec3(.76, .88, .96), vec3(.56, .72, .72), uAtmoLight);
                         vec3 gfGrassSun = mix(vec3(1.0, 1.0, .96), vec3(1.06, 1.02, .84), uAtmoLight);
-                        grassShadeTone = mix(grassShadeTone, gfGrassShade, vGfValley);
-                        grassSunTone = mix(grassSunTone, gfGrassSun, vGfValley);
-                        vec3 grassLitIndirect = mix(vec3(1.04, 1.10, .78), vec3(.96, .96, .86), vGfValley);
+                        grassShadeTone = mix(grassShadeTone, gfGrassShade, gfValley);
+                        grassSunTone = mix(grassSunTone, gfGrassSun, gfValley);
+                        vec3 grassLitIndirect = mix(vec3(1.04, 1.10, .78), vec3(.96, .96, .86), gfValley);
                         reflectedLight.indirectDiffuse *= mix(grassShadeTone, grassLitIndirect, bladeSunLit);
                         reflectedLight.directDiffuse *= mix(vec3(1.), grassSunTone, bladeSunLit * .74);
                         vec3 bladeView = normalize(cameraPosition - vBladeWorld);
                         vec3 bladeLight = normalize(uAtmoSunDir);
                         float backTrans = pow(max(0., dot(bladeView, -bladeLight)), 2.2);
                         float tipMask = smoothstep(.18, 1., vBladeTip);
-                        float nightTransGate = mix(1.0, 1.0 - uNightFactor * 0.85, vGfValley);
+                        float nightTransGate = mix(1.0, 1.0 - uNightFactor * 0.85, gfValley);
                         vec3 vegGlow = uVegTransColor * uVegTransStrength * (.30 + .70 * backTrans) * tipMask * nightTransGate;
                         reflectedLight.directDiffuse += vegGlow * diffuseColor.rgb * (.05 + .48 * bladeSunLit);`)
                     .replace('#include <tonemapping_fragment>',`
@@ -343,8 +345,8 @@ export class Meadow {
             };
             const mesh = new T.Mesh(geometry,material);
             mesh.frustumCulled = false;
-            // Only near grass (<20m) samples the PCF shadow map; in Guofeng mode extend one shell for deeper tree shadows.
-            mesh.receiveShadow = !flower && i < (readArtStyle() === 'guofeng' ? 4 : 3);
+            // Only near grass (<19m) samples the PCF shadow map; mid/far shells use baked canopyShade + terrain shadow.
+            mesh.receiveShadow = !flower && i < 3;
             mesh.renderOrder = 2;
             mesh.visible = false;
             this.group.add(mesh);
@@ -422,20 +424,30 @@ export class Meadow {
         camera.getWorldDirection(this.direction);
         const dir = this.direction, horizontal = Math.hypot(dir.x,dir.z);
         const pos = camera.position;
-        let sector: [number,number,number,number] | undefined;
-        // Keep horizontal frustum-sector culling active up to ~65 deg pitch up/down (previously dropped at 25.8 deg,
-        // causing rear-facing grass behind the camera to double GPU vertex workload when looking up at sky or flying!).
+        let hasSector = false;
+        let secMinX = 0, secMinZ = 0, secMaxX = 0, secMaxZ = 0;
+        // Zero-GC horizontal frustum-sector culling up to ~65 deg pitch up/down.
         if (camera instanceof T.PerspectiveCamera && horizontal > .42) {
             const yaw = Math.atan2(dir.z, dir.x);
             const half = Math.min(Math.PI, Math.atan(Math.tan(T.MathUtils.degToRad(camera.fov * .5)) * camera.aspect / horizontal) + .34);
             if (half < Math.PI - 0.05) {
-                const angles = [yaw - half, yaw + half];
+                hasSector = true;
+                const a0 = yaw - half, a1 = yaw + half;
+                const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+                secMinX = Math.min(0, c0, c1);
+                secMinZ = Math.min(0, s0, s1);
+                secMaxX = Math.max(0, c0, c1);
+                secMaxZ = Math.max(0, s0, s1);
                 for (let i = -4; i <= 4; i++) {
                     const a = i * Math.PI * .5;
-                    if (Math.abs(a - yaw) < half) angles.push(a);
+                    if (Math.abs(a - yaw) < half) {
+                        const ca = Math.cos(a), sa = Math.sin(a);
+                        if (ca < secMinX) secMinX = ca;
+                        if (ca > secMaxX) secMaxX = ca;
+                        if (sa < secMinZ) secMinZ = sa;
+                        if (sa > secMaxZ) secMaxZ = sa;
+                    }
                 }
-                const x = angles.map(Math.cos), z = angles.map(Math.sin);
-                sector = [Math.min(0, ...x), Math.min(0, ...z), Math.max(0, ...x), Math.max(0, ...z)];
             }
         }
         let islandAltitude = Infinity;
@@ -456,9 +468,15 @@ export class Meadow {
             for (const field of this.peakFields) this.addShells(field, 0, true);
         }
         const aboveGround = pos.y - heightAt(pos.x, pos.z);
-        const skipNearGround = aboveGround > 22;
+        const skipNearGround = aboveGround > 20;
+        const skipMidGround = aboveGround > 58;
+        const skipFarGround = aboveGround > 135;
         for (const {mesh,spacing,grid,range,nearDetail,field} of this.shells) {
-            if (skipNearGround && nearDetail && field === this.ground) {
+            if (field === this.ground && (
+                (skipNearGround && nearDetail) ||
+                (skipMidGround && range < 110) ||
+                skipFarGround
+            )) {
                 mesh.visible = false;
                 continue;
             }
@@ -466,12 +484,12 @@ export class Meadow {
             if (!mesh.visible) continue;
             const half = Math.floor(grid/2), cx = Math.floor(pos.x/spacing), cz = Math.floor(pos.z/spacing);
             let x0 = cx-half, z0 = cz-half, x1 = x0+grid, z1 = z0+grid;
-            if(sector){
+            if(hasSector){
                 const pad=Math.ceil(3.6/spacing);
-                x0=Math.max(x0,cx+Math.floor(sector[0]*half)-pad);
-                z0=Math.max(z0,cz+Math.floor(sector[1]*half)-pad);
-                x1=Math.min(x1,cx+Math.ceil(sector[2]*half)+pad);
-                z1=Math.min(z1,cz+Math.ceil(sector[3]*half)+pad);
+                x0=Math.max(x0,cx+Math.floor(secMinX*half)-pad);
+                z0=Math.max(z0,cz+Math.floor(secMinZ*half)-pad);
+                x1=Math.min(x1,cx+Math.ceil(secMaxX*half)+pad);
+                z1=Math.min(z1,cz+Math.ceil(secMaxZ*half)+pad);
             }
             if (field !== this.ground) {
                 x0 = Math.max(x0,Math.floor(field.origin.x/spacing));
@@ -509,5 +527,8 @@ export class Meadow {
 }
 
 function densityScale(quality: number, flower: boolean) {
-    return flower ? .55+.45*quality : quality;
+    if (!flower) return quality;
+    const base = .55 + .45 * quality;
+    // In Guofeng mode wildflowers are localized clusters; cut unused candidate vertex grid by 60%.
+    return readArtStyle() === 'guofeng' ? base * .40 : base;
 }

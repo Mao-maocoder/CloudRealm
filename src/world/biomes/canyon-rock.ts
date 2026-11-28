@@ -4,7 +4,7 @@ import { mainRiver, riverX, waterSurfaceAt } from '../geo/geo-core';
 import { addSolid, releaseSolids } from '../physics/solid-world';
 import { makeCanyonStone } from '../../rendering/canyon-stone';
 import { canyonLandforms, canyonRims, gorgeInfluence, ramp, rimAt, type CanyonRim } from '../geo/canyon-plan';
-import { makeLeafTexture, makeTreeCanopy, makeTreeTrunk, makeValleyTree } from '../flora/flora-geometry';
+import { computeTreeBatchBounds, makeLeafTexture, makeTreeCanopy, makeTreeTrunk, makeValleyTree } from '../flora/flora-geometry';
 import { loadSharedGuofengTreeKit, windify, type WindUniforms } from '../flora/vegetation';
 import { toonMaterial } from '../../rendering/materials';
 import { readArtStyle, type Quality } from '../../config/settings';
@@ -148,6 +148,8 @@ interface TreeDetailBatch {
     mesh:T.InstancedMesh; near:T.BufferGeometry; far:T.BufferGeometry;
 }
 
+const shelfTreeTileSize = 640;
+
 export class CanyonRockField extends T.Group {
     private readonly material=makeCanyonStone();
     private readonly tiles:WallTile[]=[];
@@ -261,19 +263,21 @@ export class CanyonRockField extends T.Group {
         this.ownedMaterials.push(valleyLeaves,valleyBark,pineBark,pineCrownMat);
 
         type Placed={p:T.Vector3;scale:number;yaw:number};
-        const valleyBuckets:Placed[][]=valleyForms.map(()=>[]);
-        const pineBucket:Placed[]=[];
+        const tiles = new Map<string, { form: number; isPine: boolean; items: Placed[] }>();
         for(const p of positions){
             if(trailDistance(p.x,p.z)<7||Number.isFinite(waterSurfaceAt(p.x,p.z,2)))continue;
             const scale=.76+randomAt(p.x,p.z,839)*.84;
             const yaw=randomAt(p.x,p.z,838)*Math.PI*2;
             const pineChance=p.y>460?.52:.32;
-            if(randomAt(p.x,p.z,841)<pineChance){
-                pineBucket.push({p,scale,yaw});
-            } else {
-                const form=Math.floor(randomAt(p.x,p.z,842)*valleyForms.length);
-                valleyBuckets[form].push({p,scale,yaw});
+            const isPine = randomAt(p.x,p.z,841)<pineChance;
+            const form = isPine ? 0 : Math.floor(randomAt(p.x,p.z,842)*valleyForms.length);
+            const key = `${Math.floor(p.x/shelfTreeTileSize)},${Math.floor(p.z/shelfTreeTileSize)},${isPine ? 'pine' : form}`;
+            let tile = tiles.get(key);
+            if (!tile) {
+                tile = { form, isPine, items: [] };
+                tiles.set(key, tile);
             }
+            tile.items.push({p,scale,yaw});
             const radius=scale*.34;
             addSolid(this,{minX:p.x-radius,maxX:p.x+radius,minY:p.y,maxY:p.y+scale*4,
                 minZ:p.z-radius,maxZ:p.z+radius,radius});
@@ -281,70 +285,45 @@ export class CanyonRockField extends T.Group {
 
         const transform=new T.Object3D(),shade=new T.Color();
         const valleyPalette=isGuofeng ? ['#8fa468','#7b9464','#98aa6c'] : ['#c8d88e','#aad096','#bfd6a4'];
-        const gfSwaps: Array<{ form: number; isPine: boolean; trunkEntry: {mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry}; crownEntry: {mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry} }> = [];
-        valleyBuckets.forEach((items,form)=>{
-            if(!items.length)return;
-            const {near,far}=valleyModels[form];
-            const trunk=new T.InstancedMesh(near.trunk,valleyBark,items.length);
-            const crown=new T.InstancedMesh(near.canopy,valleyLeaves,items.length);
+        const gfSwaps: Array<{ form: number; isPine: boolean; trunkEntry: TreeDetailBatch; crownEntry: TreeDetailBatch }> = [];
+        for (const { form, isPine, items } of tiles.values()) {
+            const {near, far} = isPine ? {
+                near: { trunk: pineTrunkGeo, canopy: pineCrownGeo },
+                far: { trunk: pineTrunkGeo, canopy: pineCrownFar },
+            } : valleyModels[form];
+            const trunk=new T.InstancedMesh(near.trunk,isPine ? pineBark : valleyBark,items.length);
+            const crown=new T.InstancedMesh(near.canopy,isPine ? pineCrownMat : valleyLeaves,items.length);
             trunk.instanceMatrix.setUsage(T.StaticDrawUsage);
             crown.instanceMatrix.setUsage(T.StaticDrawUsage);
             items.forEach(({p,scale,yaw},i)=>{
                 transform.position.copy(p);
                 transform.rotation.set(0,yaw,0);
-                transform.scale.setScalar(scale);
+                if (isPine) {
+                    transform.scale.set(scale*.9,scale*(.9+randomAt(p.x,p.z,844)*.3),scale*.9);
+                    shade.setHSL(.34+randomAt(p.x,p.z,845)*.06,isGuofeng ? .20+randomAt(p.x,p.z,846)*.10 : .26+randomAt(p.x,p.z,846)*.14,.44+randomAt(p.x,p.z,847)*.14);
+                } else {
+                    transform.scale.setScalar(scale);
+                    shade.set(valleyPalette[form]).multiplyScalar(.88+randomAt(p.x,p.z,843)*.24);
+                }
                 transform.updateMatrix();
                 trunk.setMatrixAt(i,transform.matrix);
                 crown.setMatrixAt(i,transform.matrix);
-                shade.set(valleyPalette[form]).multiplyScalar(.88+randomAt(p.x,p.z,843)*.24);
                 crown.setColorAt(i,shade);
             });
             trunk.instanceMatrix.needsUpdate=true;
             crown.instanceMatrix.needsUpdate=true;
             if(crown.instanceColor)crown.instanceColor.needsUpdate=true;
-            trunk.computeBoundingSphere();
-            crown.computeBoundingSphere();
+            computeTreeBatchBounds(trunk, near.trunk, far.trunk);
+            computeTreeBatchBounds(crown, near.canopy, far.canopy, .6);
             trunk.castShadow=trunk.receiveShadow=true;
             crown.castShadow=crown.receiveShadow=true;
-            trunk.name=`canyon-broadleaf-trunks-${form}`;
-            crown.name=`canyon-broadleaf-crowns-${form}`;
+            trunk.name=isPine ? 'canyon-pine-trunks' : `canyon-broadleaf-trunks-${form}`;
+            crown.name=isPine ? 'canyon-pine-crowns' : `canyon-broadleaf-crowns-${form}`;
             this.woods.push(trunk,crown);
             const trunkEntry = {mesh:trunk,near:near.trunk,far:far.trunk};
             const crownEntry = {mesh:crown,near:near.canopy,far:far.canopy};
             this.treeBatches.push(trunkEntry,crownEntry);
-            gfSwaps.push({ form, isPine: false, trunkEntry, crownEntry });
-            this.add(trunk,crown);
-        });
-
-        if(pineBucket.length){
-            const trunk=new T.InstancedMesh(pineTrunkGeo,pineBark,pineBucket.length);
-            const crown=new T.InstancedMesh(pineCrownGeo,pineCrownMat,pineBucket.length);
-            trunk.instanceMatrix.setUsage(T.StaticDrawUsage);
-            crown.instanceMatrix.setUsage(T.StaticDrawUsage);
-            pineBucket.forEach(({p,scale,yaw},i)=>{
-                transform.position.copy(p);
-                transform.rotation.set(0,yaw,0);
-                transform.scale.set(scale*.9,scale*(.9+randomAt(p.x,p.z,844)*.3),scale*.9);
-                transform.updateMatrix();
-                trunk.setMatrixAt(i,transform.matrix);
-                crown.setMatrixAt(i,transform.matrix);
-                shade.setHSL(.34+randomAt(p.x,p.z,845)*.06,isGuofeng ? .20+randomAt(p.x,p.z,846)*.10 : .26+randomAt(p.x,p.z,846)*.14,.44+randomAt(p.x,p.z,847)*.14);
-                crown.setColorAt(i,shade);
-            });
-            trunk.instanceMatrix.needsUpdate=true;
-            crown.instanceMatrix.needsUpdate=true;
-            if(crown.instanceColor)crown.instanceColor.needsUpdate=true;
-            trunk.computeBoundingSphere();
-            crown.computeBoundingSphere();
-            trunk.castShadow=trunk.receiveShadow=true;
-            crown.castShadow=crown.receiveShadow=true;
-            trunk.name='canyon-pine-trunks';
-            crown.name='canyon-pine-crowns';
-            this.woods.push(trunk,crown);
-            const trunkEntry = {mesh:trunk,near:pineTrunkGeo,far:pineTrunkGeo};
-            const crownEntry = {mesh:crown,near:pineCrownGeo,far:pineCrownFar};
-            this.treeBatches.push(trunkEntry,crownEntry);
-            if (isGuofeng) gfSwaps.push({ form: 0, isPine: true, trunkEntry, crownEntry });
+            if (isGuofeng) gfSwaps.push({ form, isPine, trunkEntry, crownEntry });
             this.add(trunk,crown);
         }
         if (isGuofeng && gfSwaps.length) {
@@ -354,14 +333,16 @@ export class CanyonRockField extends T.Group {
                 for (const item of gfSwaps) {
                     const pair = item.isPine ? kit.pine : (map[item.form] ?? kit.oak);
                     if (!pair) continue;
-                    const wasFarT = item.trunkEntry.mesh.geometry === item.trunkEntry.far;
                     item.trunkEntry.near = pair.trunk;
                     item.trunkEntry.far = pair.trunk;
-                    item.trunkEntry.mesh.geometry = wasFarT ? pair.trunk : pair.trunk;
+                    item.trunkEntry.mesh.geometry = pair.trunk;
+                    item.trunkEntry.mesh.computeBoundingSphere();
                     const wasFarC = item.crownEntry.mesh.geometry === item.crownEntry.far;
                     item.crownEntry.near = pair.canopy;
                     item.crownEntry.far = pair.canopyFar;
-                    item.crownEntry.mesh.geometry = wasFarC ? pair.canopyFar : pair.canopy;
+                    const crown = item.crownEntry.mesh;
+                    crown.geometry = wasFarC ? pair.canopyFar : pair.canopy;
+                    computeTreeBatchBounds(crown, pair.canopy, pair.canopyFar, .6);
                 }
             });
         }
@@ -374,12 +355,17 @@ export class CanyonRockField extends T.Group {
             if(distance>threshold+45)tile.mesh.geometry=tile.far;
             else if(distance<threshold-45)tile.mesh.geometry=tile.near;
         }
-        const treeRange=quality==='low'?120:quality==='high'?260:180;
+        const treeRange=quality==='low'?110:quality==='high'?220:155;
+        const trunkCull=quality==='low'?480:quality==='high'?900:680;
         for(const batch of this.treeBatches){
             const distance=batch.mesh.boundingSphere!.distanceToPoint(camera.position);
+            if (batch.mesh.name.includes('trunks')) {
+                batch.mesh.visible = distance < trunkCull;
+                if (!batch.mesh.visible) continue;
+            }
             const useFar=distance>treeRange+(batch.mesh.geometry===batch.far?-20:20);
             batch.mesh.geometry=useFar?batch.far:batch.near;
-            batch.mesh.castShadow=distance<treeRange+60;
+            batch.mesh.castShadow=distance<Math.min(treeRange+40, 120);
         }
     }
 

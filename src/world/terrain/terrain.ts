@@ -158,7 +158,7 @@ export class Terrain {
         const now = performance.now();
         if (now >= this.nextDetail) {
             this.nextDetail = now + (highSpeed ? 280 : 160);
-            const treeRange = this.quality === 'low' ? 75 : this.quality === 'high' ? 154 : 112;
+            const treeRange = this.quality === 'low' ? 56 : this.quality === 'high' ? 112 : 78;
             for (const { plants } of this.chunks.values()) {
                 if (plants) this.vegetation.updateDetail(plants, camera, treeRange);
             }

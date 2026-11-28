@@ -630,7 +630,7 @@ export class Vegetation {
                 const distance=mesh.boundingSphere!.distanceToPoint(camera.position);
                 const useFar=distance>range+(mesh.geometry===far?-13:13);
                 mesh.geometry=useFar?far:near;
-                mesh.castShadow=distance<78;
+                mesh.castShadow=distance<64;
             }
         }
         // Only cast shadows inside the directional sun's ±70 m shadow frustum.
@@ -638,7 +638,7 @@ export class Vegetation {
             if(!(child instanceof T.InstancedMesh)||!child.boundingSphere)continue;
             if(child.castShadow||child.userData.shadowCaster){
                 child.userData.shadowCaster=true;
-                child.castShadow=child.boundingSphere.distanceToPoint(camera.position)<78;
+                child.castShadow=child.boundingSphere.distanceToPoint(camera.position)<64;
             }
         }
     }

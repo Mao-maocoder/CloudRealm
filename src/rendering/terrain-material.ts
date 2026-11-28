@@ -182,10 +182,16 @@ export function createTerrainMaterial() {
             diffuseColor.rgb=mix(diffuseColor.rgb,mineral,exposedRock*.76);
             float shoreHeight=geo.r-geo.g;
             float shoreCoverage=smoothstep(.12,.50,geo.b);
-            float bankWarp=(tFbm(worldUV*.095+vec2(4.3,9.1))-.5)*1.05+(tNoise(worldUV*.34+vec2(17.2,3.8))-.5)*.45;
-            float organicShore=shoreHeight-bankWarp*(1.-smoothstep(.8,4.2,max(0.,shoreHeight)));
-            float wet=(1.-smoothstep(.0,1.35+macro*.85,organicShore))*shoreCoverage;
-            float shore=(1.-smoothstep(.95,3.6+macro*1.35,organicShore))*shoreCoverage;
+            float wet=0.,shore=0.;
+            if(shoreCoverage>0.){
+                float organicShore=shoreHeight;
+                if(shoreHeight<4.2){
+                    float bankWarp=(tFbm(worldUV*.095+vec2(4.3,9.1))-.5)*1.05+(tNoise(worldUV*.34+vec2(17.2,3.8))-.5)*.45;
+                    organicShore-=bankWarp*(1.-smoothstep(.8,4.2,max(0.,shoreHeight)));
+                }
+                wet=(1.-smoothstep(.0,1.35+macro*.85,organicShore))*shoreCoverage;
+                shore=(1.-smoothstep(.95,3.6+macro*1.35,organicShore))*shoreCoverage;
+            }
             float meadow=(1.-smoothstep(.08,.3,terrainSlope))*(1.-smoothstep(300.,420.,vWPos.y))*(1.-shore*.9);
             float fieldDistance=distance(cameraPosition.xz,worldUV);
             float surfaceDistance=length(cameraPosition-vWPos);
@@ -289,6 +295,7 @@ export function createTerrainMaterial() {
             float cloud=tNoise(worldUV*.0024+vec2(uTime*.0045,uTime*.0016));
             diffuseColor.rgb*=1.-.075*smoothstep(.42,.84,cloud);
             float grassRoadMask=1.;
+            float yard=villageGround(worldUV);
             if(vWPos.x>-2048.&&vWPos.x<2048.&&vWPos.z>-2400.&&vWPos.z<1696.){
                 float roadDistance=plannedRoadDistance(worldUV);
                 float shoulder=3.8+(tNoise(worldUV*.42)-.5)*mix(.9,2.15,valley);
@@ -299,7 +306,6 @@ export function createTerrainMaterial() {
                 vec3 clay=mix(vec3(.39,.30,.18),vec3(.67,.55,.34),smoothstep(.22,.83,.45*macro+.35*gravel+.2*fine));
                 clay*=1.-grains*.29;
                 clay=mix(clay,sward,.25*smoothstep(1.25,3.85,roadDistance)*fine);
-                float yard=villageGround(worldUV);
                 float pathMask=max(trail*.92,yard);
                 grassRoadMask=1.-smoothstep(.06,.62,pathMask);
                 diffuseColor.rgb=mix(diffuseColor.rgb,mix(packed,clay,valley),pathMask);
@@ -479,12 +485,13 @@ export function createTerrainMaterial() {
             float overviewCoverage=max(grassCoverage*(1.-forestBand*.64),farmCoverage*.79);
             diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*fieldLight,
                 overviewCoverage*overlook*corridor.a*.83);
-            float canopyShadow=canopyShade(worldUV)*smoothstep(65.,220.,surfaceDistance);
+            float canopyCover=canopyShade(worldUV);
+            float canopyShadow=canopyCover*smoothstep(65.,220.,surfaceDistance);
             diffuseColor.rgb*=mix(vec3(1.),vec3(.50,.62,.68),canopyShadow*drySurface);
             // Multi-layer natural ground transition for Changfeng Valley (dry soil, damp earth, gravel, fallen leaves, dry grass).
             if(gfValley>.001){
                 float ecoDry=smoothstep(.46,.82,tNoise(worldUV*.021+vec2(-19.4,8.6))*.68+tNoise(worldUV*.072+vec2(6.1,-13.4))*.32);
-                float litterMask=clamp(canopyShade(worldUV)*1.15+forestBand*.55+clearing.g*.45,0.,1.)*drySurface*grassRoadMask;
+                float litterMask=clamp(canopyCover*1.15+forestBand*.55+clearing.g*.45,0.,1.)*drySurface*grassRoadMask;
                 float screeMask=smoothstep(.12,.30,terrainSlope)*(.45+.55*gravel);
                 vec3 dryEarth=mix(vec3(.29,.23,.16),vec3(.41,.34,.24),gravel*.65+macro*.35);
                 vec3 dampEarth=mix(vec3(.13,.11,.08),vec3(.21,.18,.13),mott);
@@ -539,9 +546,8 @@ export function createTerrainMaterial() {
                     terrainRockRelief+=gfCliffMask*gfValley*((cRock.r-.5)*.82+(cRock.g-.5)*.54);
                 }
                 // Trampled packed soil & stone grit apron around village foundations & lanes
-                float vApron=villageGround(worldUV);
                 vec3 villageGrit=mix(dryEarth,gravelScree,.42*gravel);
-                diffuseColor.rgb=mix(diffuseColor.rgb,villageGrit,smoothstep(.05,.62,vApron)*.72*gfValley);
+                diffuseColor.rgb=mix(diffuseColor.rgb,villageGrit,smoothstep(.05,.62,yard)*.72*gfValley);
             }
             // Vibrant speckled wildflower drifts along valley slopes & riverbanks.
             float wildFlower=meadow*valley*grassRoadMask*(1.-farmCoverage)*(1.-ruinCoverage);
