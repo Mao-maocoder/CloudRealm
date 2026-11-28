@@ -29,7 +29,7 @@ export function readArtStyle(): ArtStyle {
     } catch {
         // Ignore storage restrictions in private webviews.
     }
-    cachedArtStyle = 'anime';
+    cachedArtStyle = 'guofeng';
     return cachedArtStyle;
 }
 export function writeArtStyle(style: ArtStyle) {

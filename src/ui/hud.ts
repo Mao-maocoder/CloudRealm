@@ -366,7 +366,7 @@ export class HUD {
 <section class="panel hidden" id="panel">
   <h2>旅途设置</h2>
   <label>画质<select id="quality"><option value="low">轻盈 · 低</option><option value="medium">均衡 · 中</option><option value="high">清晰 · 高</option></select></label>
-  <label>画风<select id="art-style"><option value="anime">青翠国漫（默认）</option><option value="guofeng">国风厚涂（全图）</option></select></label>
+  <label>画风<select id="art-style"><option value="guofeng">国风厚涂（默认）</option><option value="anime">青翠国漫（经典）</option></select></label>
   <label>昼夜流转<input id="day-auto" type="checkbox" checked/></label>
   <div class="time-control">
     <div class="time-row"><span>当前时辰</span><b id="time-readout">巳时 · 10:00</b></div>
@@ -610,7 +610,7 @@ export class HUD {
             if (next === currentArtStyle) return;
             pendingArtStyle = next;
             if (document.pointerLockElement) document.exitPointerLock?.();
-            const label = next === 'guofeng' ? '国风厚涂（全图）' : '青翠国漫（默认）';
+            const label = next === 'guofeng' ? '国风厚涂（默认）' : '青翠国漫（经典）';
             styleModalDesc.textContent = `即将切换为「${label}」。为避免实时重建着色器与材质导致设备卡顿，确认后将保存设置并重新加载页面。`;
             styleModal.classList.remove('hidden');
         };
