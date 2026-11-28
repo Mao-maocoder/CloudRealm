@@ -197,6 +197,16 @@
 
 .welcome[data-state='error'] #welcome-status { color: #ffd4b8; }
 
+.welcome-tip {
+  margin: 8px 0 0;
+  padding: 0 6.2%;
+  text-align: center;
+  color: rgba(255, 240, 211, 0.76);
+  font-size: clamp(11px, 0.95vw, 13px);
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 4px rgba(4, 16, 22, 0.85);
+}
+
 @media (max-aspect-ratio: 1/1) {
   .welcome-art { object-position: 70% 50%; }
   #welcome-title {

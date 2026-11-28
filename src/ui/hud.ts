@@ -477,6 +477,10 @@ export class HUD {
         <div class="ctrl-row"><span class="ctrl-label"><i class="ctrl-ico">❖</i>破境 / 舆图</span><span class="ctrl-keys"><kbd>B</kbd><kbd>M</kbd></span></div>
       </div>
     </section>
+    <div class="first-play-tip" id="first-play-tip">
+      <span>首次游玩场景资源加载中，穿行可能短暂卡顿，加载完成后帧率将趋于稳定</span>
+      <button type="button" class="first-play-tip-close" id="first-play-tip-close" aria-label="关闭提示">×</button>
+    </div>
     <button type="button" class="controls-toggle" id="controls-toggle" aria-expanded="false">
       <kbd>H</kbd><span>· 操作指南</span>
     </button>
@@ -517,6 +521,14 @@ export class HUD {
         this.realmSelect = el<HTMLSelectElement>('realm-select');
         this.damageScaleEl = el('realm-dmg-scale');
         this.testBarBody = el('realm-test-body');
+        const firstPlayTip = this.root.querySelector<HTMLElement>('#first-play-tip');
+        const firstPlayTipClose = this.root.querySelector<HTMLButtonElement>('#first-play-tip-close');
+        if (firstPlayTip && firstPlayTipClose) {
+            firstPlayTipClose.onclick = e => {
+                e.stopPropagation();
+                firstPlayTip.classList.add('hidden');
+            };
+        }
         this.root.querySelectorAll<HTMLButtonElement>('.realm-quick-btn').forEach(btn => {
             const idx = parseInt(btn.dataset.realm ?? '0', 10);
             this.realmQuickBtns.set(idx, btn);

@@ -1108,6 +1108,41 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--gold); out
   font-weight: 700;
   color: var(--gold);
 }
+.first-play-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 248px;
+  padding: 6px 10px 6px 12px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(12, 34, 40, .74), rgba(8, 22, 27, .82));
+  border: 1px solid rgba(232, 211, 152, .34);
+  color: rgba(244, 240, 224, .86);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: .3px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 16px rgba(4, 16, 20, .38);
+  pointer-events: auto;
+}
+.first-play-tip.hidden { display: none; }
+.first-play-tip-close {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 244, 214, .12);
+  color: rgba(255, 244, 214, .78);
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.first-play-tip-close:hover {
+  background: rgba(255, 244, 214, .24);
+  color: #fff8e6;
+}
 .controls-toggle:hover,
 .controls-toggle.open {
   border-color: var(--gold);
