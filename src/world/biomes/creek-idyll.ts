@@ -7,7 +7,7 @@ import { makeHouse } from './house-models';
 import { makeShoreStoneGeometry, makeShoreStoneMaterial } from '../../rendering/shore-stone';
 import { makeGrassTuft, makeLeafTexture, makeValleyTree } from '../flora/flora-geometry';
 import { addBoulderSolid, addSolid } from '../physics/solid-world';
-import { windify, type WindUniforms } from '../flora/vegetation';
+import { loadSharedGuofengTreeKit, windify, type WindUniforms } from '../flora/vegetation';
 import { atmosphereUniforms } from '../../rendering/aerial-perspective';
 
 // Pastoral creek-bridge crossing in Changfeng Valley (sakura-creek rustic stone arch).
@@ -127,11 +127,11 @@ export function populateCreekIdyll(group: T.Group, wind: WindUniforms) {
     // 2) Framing lush broadleaf trees behind & beside both thatched cottages.
     const leafTex = makeLeafTexture(false, isGuofeng);
     const leafMat = new T.MeshLambertMaterial({
-        map: leafTex, alphaTest: .36, alphaToCoverage: true, vertexColors: true, side: T.DoubleSide,
+        map: leafTex, color: isGuofeng ? '#98ad6e' : '#ffffff', alphaTest: isGuofeng ? .34 : .36, alphaToCoverage: !isGuofeng, vertexColors: true, side: T.DoubleSide,
     });
-    const barkMat = new T.MeshLambertMaterial({ color: '#73513a', vertexColors: true });
+    const barkMat = new T.MeshLambertMaterial({ color: isGuofeng ? '#5e4c3c' : '#73513a', vertexColors: true });
     windify(leafMat, wind, .26, 9.0);
-    const treeModels = [makeValleyTree(0, true), makeValleyTree(1, true)];
+    const treeModels = [makeValleyTree(0, true, isGuofeng), makeValleyTree(1, true, isGuofeng)];
     const treeSpots = [
         { x: 205, z: -13, form: 0, scale: 1.38 },
         { x: 192, z: -18, form: 1, scale: 1.12 },
@@ -139,6 +139,7 @@ export function populateCreekIdyll(group: T.Group, wind: WindUniforms) {
         { x: 132, z: -54, form: 1, scale: 1.05 },
         { x: 175, z: 37, form: 1, scale: 1.18 },
     ];
+    const creekTreeMeshes: Array<{ trunk: T.Mesh; crown: T.Mesh; form: number }> = [];
     for (const [i, spot] of treeSpots.entries()) {
         if (!dryBankSpot(spot.x, spot.z)) continue;
         const y = heightAt(spot.x, spot.z) - .12;
@@ -152,8 +153,20 @@ export function populateCreekIdyll(group: T.Group, wind: WindUniforms) {
         trunk.castShadow = trunk.receiveShadow = crown.castShadow = crown.receiveShadow = true;
         tree.add(trunk, crown);
         idyll.add(tree);
+        creekTreeMeshes.push({ trunk, crown, form: spot.form });
         const r = .42 * spot.scale;
         addSolid(group, { minX: spot.x - r, maxX: spot.x + r, minY: y, maxY: y + 4 * spot.scale, minZ: spot.z - r, maxZ: spot.z + r, radius: r });
+    }
+    if (isGuofeng && creekTreeMeshes.length) {
+        void loadSharedGuofengTreeKit().then(kit => {
+            if (!kit) return;
+            for (const item of creekTreeMeshes) {
+                const pair = item.form === 0 ? kit.elm : kit.oak;
+                if (!pair) continue;
+                item.trunk.geometry = pair.trunk;
+                item.crown.geometry = pair.canopy;
+            }
+        });
     }
 
     // 3) Mossy weathered boulders hugging both bridge abutments and lining the creek banks.

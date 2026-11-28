@@ -146,9 +146,9 @@ export function dilateTransparentColor(ctx: CanvasRenderingContext2D, size: numb
     // Fill any remaining far transparent corners with average mid-leaf green so deep mips stay green.
     for (let i = 0; i < size * size; i++) {
         if (!filled[i]) {
-            data[i * 4] = 148;
-            data[i * 4 + 1] = 172;
-            data[i * 4 + 2] = 132;
+            data[i * 4] = 196;
+            data[i * 4 + 1] = 212;
+            data[i * 4 + 2] = 184;
         }
     }
     ctx.putImageData(img, 0, 0);
@@ -176,8 +176,9 @@ export function makeLeafTexture(blossom = false, guofeng = false): T.Texture {
             const radius = Math.sqrt(random()) * 58;
             const cx = 128 + Math.cos(angle) * radius * 1.06;
             const cy = 128 + Math.sin(angle) * radius * .88;
-            const shade = .82 + (1 - cy / 256) * .18;
-            ctx.fillStyle = `rgb(${Math.round(118 * shade)},${Math.round(146 * shade)},${Math.round(108 * shade)})`;
+            const shade = .86 + (1 - cy / 256) * .14;
+            // High-value neutral foliage base so instanceColor + Blender vertex AO control tone without crushing to black in linear space
+            ctx.fillStyle = `rgb(${Math.round(182 * shade)},${Math.round(200 * shade)},${Math.round(172 * shade)})`;
             ctx.beginPath();
             ctx.ellipse(cx, cy, 24 + random() * 14, 17 + random() * 11, angle, 0, Math.PI * 2);
             ctx.fill();
@@ -194,8 +195,7 @@ export function makeLeafTexture(blossom = false, guofeng = false): T.Texture {
                 const r = 4 + Math.sqrt(random()) * 20;
                 const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
                 const v = Math.min(1, light + random() * .24);
-                // Capped below 218 so leaf tips stay rich matte foliage (never white speckles at night)
-                ctx.fillStyle = `rgb(${Math.round(132 + 66 * v)},${Math.round(158 + 56 * v)},${Math.round(118 + 50 * v)})`;
+                ctx.fillStyle = `rgb(${Math.round(192 + 48 * v)},${Math.round(208 + 40 * v)},${Math.round(182 + 42 * v)})`;
                 ctx.beginPath();
                 ctx.ellipse(x, y, 10.5 + random() * 8.5, 4.6 + random() * 3.8, a, 0, Math.PI * 2);
                 ctx.fill();

@@ -5,7 +5,7 @@ import { makeBankFlowerCluster, makeBridgeTree, makeCloverPatch, makeGrassTuft, 
 import { heightAt, randomAt, trailDistance } from '../geo/height';
 import { riverX, waterLevelAt } from '../geo/geo-core';
 import { addBoulderSolid, addSolid, releaseSolids } from '../physics/solid-world';
-import { windify, type WindUniforms } from '../flora/vegetation';
+import { loadSharedGuofengTreeKit, windify, type WindUniforms } from '../flora/vegetation';
 import { makeShoreStoneGeometry, makeShoreStoneMaterial } from '../../rendering/shore-stone';
 
 export class BridgeGrove extends T.Group {
@@ -18,26 +18,31 @@ export class BridgeGrove extends T.Group {
         this.name = 'bridge-grove';
         if (!bridgeArtEnabled) return;
 
-        this.leafTexture = makeLeafTexture();
+        const isGuofeng = readArtStyle() === 'guofeng';
+        this.leafTexture = makeLeafTexture(false, isGuofeng);
         const leaves = new T.MeshLambertMaterial({
-            map: this.leafTexture, color: '#e3e4b5', alphaTest: .36, alphaToCoverage: true,
+            map: this.leafTexture, color: isGuofeng ? '#9ab072' : '#e3e4b5', alphaTest: isGuofeng ? .34 : .36, alphaToCoverage: !isGuofeng,
             side: T.DoubleSide, vertexColors: true,
         });
-        leaves.onBeforeCompile = shader => {
-            shader.uniforms.uGroveSun = { value: sunDirection };
-            shader.vertexShader = 'varying vec3 vCrownNormal;\n' + shader.vertexShader.replace(
-                '#include <begin_vertex>', '#include <begin_vertex>\nvCrownNormal=mat3(modelMatrix)*normal;');
-            shader.fragmentShader = 'varying vec3 vCrownNormal; uniform vec3 uGroveSun;\n' + shader.fragmentShader.replace(
-                '#include <lights_fragment_end>', `#include <lights_fragment_end>
-                vec3 crownNormal=normalize(vCrownNormal);
-                vec3 eye=normalize(vViewPosition);
-                vec3 sunView=normalize(mat3(viewMatrix)*uGroveSun);
-                float backlight=pow(max(0.,-dot(eye,sunView)),2.);
-                float litRim=smoothstep(-.36,.72,dot(crownNormal,uGroveSun));
-                reflectedLight.indirectDiffuse *= mix(.64,1.15,smoothstep(-.45,.62,crownNormal.y));
-                reflectedLight.indirectDiffuse += diffuseColor.rgb*vec3(.83,.57,.18)*litRim*(.14+.62*backlight);`);
-        };
-        const bark = new T.MeshLambertMaterial({ vertexColors: true, color: '#897258' });
+        if (isGuofeng) {
+            windify(leaves, wind, .18, 8.5);
+        } else {
+            leaves.onBeforeCompile = shader => {
+                shader.uniforms.uGroveSun = { value: sunDirection };
+                shader.vertexShader = 'varying vec3 vCrownNormal;\n' + shader.vertexShader.replace(
+                    '#include <begin_vertex>', '#include <begin_vertex>\nvCrownNormal=mat3(modelMatrix)*normal;');
+                shader.fragmentShader = 'varying vec3 vCrownNormal; uniform vec3 uGroveSun;\n' + shader.fragmentShader.replace(
+                    '#include <lights_fragment_end>', `#include <lights_fragment_end>
+                    vec3 crownNormal=normalize(vCrownNormal);
+                    vec3 eye=normalize(vViewPosition);
+                    vec3 sunView=normalize(mat3(viewMatrix)*uGroveSun);
+                    float backlight=pow(max(0.,-dot(eye,sunView)),2.);
+                    float litRim=smoothstep(-.36,.72,dot(crownNormal,uGroveSun));
+                    reflectedLight.indirectDiffuse *= mix(.64,1.15,smoothstep(-.45,.62,crownNormal.y));
+                    reflectedLight.indirectDiffuse += diffuseColor.rgb*vec3(.83,.57,.18)*litRim*(.14+.62*backlight);`);
+            };
+        }
+        const bark = new T.MeshLambertMaterial({ vertexColors: true, color: isGuofeng ? '#5e4c3c' : '#897258' });
         bark.onBeforeCompile = shader => {
             shader.vertexShader = 'varying vec3 vGroveBark;\n' + shader.vertexShader.replace(
                 '#include <begin_vertex>', '#include <begin_vertex>\nvGroveBark=position;');
@@ -48,19 +53,21 @@ export class BridgeGrove extends T.Group {
                 diffuseColor.rgb *= .78+.26*smoothstep(-.7,.35,furrow);`);
         };
         this.materials.push(leaves,bark);
+        const groveMeshes: Array<{ trunk: T.Mesh; crown: T.Mesh; idx: number }> = [];
         bridgeTrees.forEach(({x,z,yaw,width,height}, i) => {
             const model = makeBridgeTree(width,height,i===0);
             const group = new T.Group();
             const y = heightAt(x,z);
             group.position.set(x,y,z);
             group.rotation.y = yaw;
+            if (isGuofeng) group.scale.setScalar(i === 0 ? 1.38 : 1.18);
             const trunk = new T.Mesh(model.trunk,bark), crown = new T.Mesh(model.canopy,leaves);
             crown.material.shadowSide = T.DoubleSide;
             crown.customDepthMaterial = new T.MeshDepthMaterial({
-                depthPacking: T.RGBADepthPacking, map: this.leafTexture, alphaTest: .36, side: T.DoubleSide,
+                depthPacking: T.RGBADepthPacking, map: this.leafTexture, alphaTest: isGuofeng ? .34 : .36, side: T.DoubleSide,
             });
             this.materials.push(crown.customDepthMaterial);
-            if (i===1) {
+            if (!isGuofeng && i===1) {
                 const tint=model.canopy.getAttribute('color');
                 for (let v=0;v<tint.count;v++)
                     tint.setXYZ(v,tint.getX(v)*.76,tint.getY(v)*.97,tint.getZ(v)*1.16);
@@ -69,9 +76,21 @@ export class BridgeGrove extends T.Group {
             group.add(trunk,crown);
             this.add(group);
             this.geometry.push(model.trunk,model.canopy);
+            groveMeshes.push({ trunk, crown, idx: i });
             const radius = i===0 ? .64 : .49;
             addSolid(this,{minX:x-radius,maxX:x+radius,minZ:z-radius,maxZ:z+radius,minY:y,maxY:y+4,radius});
         });
+        if (isGuofeng) {
+            void loadSharedGuofengTreeKit().then(kit => {
+                if (!kit) return;
+                for (const item of groveMeshes) {
+                    const pair = item.idx === 0 ? kit.elm : kit.pine;
+                    if (!pair) continue;
+                    item.trunk.geometry = pair.trunk;
+                    item.crown.geometry = pair.canopy;
+                }
+            });
+        }
         this.traverse(object => object.layers.enable(bridgeReflectionLayer));
         this.addShoreDetails(wind);
     }
@@ -96,13 +115,13 @@ export class BridgeGrove extends T.Group {
         const cloverGeo = makeCloverPatch();
         const cloverMat = new T.MeshLambertMaterial({vertexColors:true, side:T.DoubleSide});
         const clovers = new T.InstancedMesh(cloverGeo,cloverMat,clusters.length*12);
-        const shrubGeo = makeValleyShrub();
+        const isGuofeng = readArtStyle() === 'guofeng';
+        const shrubGeo = makeValleyShrub(isGuofeng);
         const shrubMat = new T.MeshLambertMaterial({
-            map: this.leafTexture, alphaTest: .44, alphaToCoverage: true, side: T.DoubleSide, vertexColors: true,
+            map: this.leafTexture, alphaTest: isGuofeng ? .34 : .44, alphaToCoverage: !isGuofeng, side: T.DoubleSide, vertexColors: true,
         });
         windify(shrubMat,wind,.14,2.6);
         const bankShrubs = new T.InstancedMesh(shrubGeo,shrubMat,clusters.length*6);
-        const isGuofeng = readArtStyle() === 'guofeng';
         const instance = new T.Object3D();
         const fresh=new T.Color(isGuofeng ? '#5d7342' : '#b6e854'), deep=new T.Color(isGuofeng ? '#2c4a35' : '#4a9d4e'), color=new T.Color();
         const bloomPalette=isGuofeng ? ['#eeeae0','#e2d49a','#f2efe6','#9acbb8'] : ['#ffe44d','#fffaf0','#66b8ff','#ff8db8','#be92ff'];

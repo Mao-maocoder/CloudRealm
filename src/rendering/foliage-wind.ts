@@ -107,11 +107,13 @@ export function windify(
                 vec3 coolShadeTint = mix(vec3(.66, .84, .96), vec3(.44, .90, 1.04), uAtmoLight);
                 vec3 warmCrownTint = mix(vec3(.92, .96, 1.0), vec3(1.18, 1.24, .76), uAtmoLight);
                 // Guofeng: natural cool jade-green underside (never crushed black), warm sunlit upper crown, clean moonlit night.
-                vec3 gfCoolShade = mix(vec3(.60, .76, .90), vec3(.72, .88, .82), uAtmoLight);
-                vec3 gfWarmCrown = mix(vec3(.78, .90, 1.04), vec3(1.28, 1.24, .88), uAtmoLight);
+                vec3 gfCoolShade = mix(vec3(.62, .78, .92), vec3(.78, .94, .88), uAtmoLight);
+                vec3 gfWarmCrown = mix(vec3(.82, .94, 1.06), vec3(1.36, 1.32, .96), uAtmoLight);
                 coolShadeTint = mix(coolShadeTint, gfCoolShade, gfLeaf);
                 warmCrownTint = mix(warmCrownTint, gfWarmCrown, gfLeaf);
                 reflectedLight.indirectDiffuse *= mix(coolShadeTint, warmCrownTint, leafLitMix);
+                // Soft sky-hemisphere & crown-volume bounce so top-down aerial views of trees stay lush & readable (never dark silhouettes).
+                reflectedLight.indirectDiffuse += diffuseColor.rgb * mix(vec3(.07, .10, .14), vec3(.24, .25, .18), uAtmoLight) * (.42 + .58 * leafLitMix) * gfLeaf;
                 vec3 directCrownTint = mix(
                     mix(vec3(.84, 1.02, 1.08), vec3(1.12, 1.18, .74), leafSunWrap * uAtmoLight),
                     mix(vec3(.78, .92, 1.00), vec3(1.24, 1.18, .86), leafSunWrap * uAtmoLight),

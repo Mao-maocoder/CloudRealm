@@ -26,6 +26,56 @@ import { makePainterlyBarkMaterial, windify, type WindUniforms } from '../../ren
 import type { SurfaceWake } from '../../effects/surface-wake';
 export { windify, type WindUniforms };
 
+export type GuofengTreePair = {
+    trunk: T.BufferGeometry;
+    canopy: T.BufferGeometry;
+    canopyFar: T.BufferGeometry;
+};
+export type GuofengTreeKit = {
+    elm?: GuofengTreePair;
+    pine?: GuofengTreePair;
+    oak?: GuofengTreePair;
+};
+let sharedGuofengTreeKitPromise: Promise<GuofengTreeKit | undefined> | undefined;
+
+/** Shared cached loader for the 3 Blender-modeled Guofeng tree GLBs (reused across all biomes). */
+export function loadSharedGuofengTreeKit(): Promise<GuofengTreeKit | undefined> {
+    if (typeof window === 'undefined') return Promise.resolve(undefined);
+    if (!sharedGuofengTreeKitPromise) {
+        const loader = new GLTFLoader();
+        const loadPair = async (url: string): Promise<GuofengTreePair | undefined> => {
+            const gltf = await loader.loadAsync(url);
+            let trunk: T.BufferGeometry | undefined;
+            let canopy: T.BufferGeometry | undefined;
+            let canopyFar: T.BufferGeometry | undefined;
+            gltf.scene.traverse(obj => {
+                if (!(obj instanceof T.Mesh)) return;
+                const g = obj.geometry.clone();
+                g.computeBoundingBox();
+                g.computeBoundingSphere();
+                const lname = obj.name.toLowerCase();
+                if (lname.includes('trunk')) trunk = g;
+                else if (lname.includes('canopyfar')) canopyFar = g;
+                else if (lname.includes('canopy')) canopy = g;
+            });
+            return trunk && canopy ? { trunk, canopy, canopyFar: canopyFar ?? canopy } : undefined;
+        };
+        const elmUrl = new URL('../../../resource/flora/guofeng_elm.glb', import.meta.url).href;
+        const pineUrl = new URL('../../../resource/flora/guofeng_pine.glb', import.meta.url).href;
+        const oakUrl = new URL('../../../resource/flora/guofeng_oak.glb', import.meta.url).href;
+        sharedGuofengTreeKitPromise = Promise.all([
+            loadPair(elmUrl),
+            loadPair(pineUrl),
+            loadPair(oakUrl),
+        ]).then(([elm, pine, oak]) => ({ elm, pine, oak }))
+            .catch(err => {
+                console.warn('Guofeng Blender tree GLBs failed to load, keeping procedural fallback:', err);
+                return undefined;
+            });
+    }
+    return sharedGuofengTreeKitPromise;
+}
+
 /**
  * Instanced, procedurally modelled valley flora. Everything shares a handful of
  * geometries per chunk: sakura + pine trees, grass tufts, flowers, shrubs,
@@ -132,100 +182,66 @@ export class Vegetation {
     }
 
     private async loadGuofengTreeAssets() {
-        const loader = new GLTFLoader();
-        const loadPair = async (url: string) => {
-            const gltf = await loader.loadAsync(url);
-            let trunk: T.BufferGeometry | undefined;
-            let canopy: T.BufferGeometry | undefined;
-            let canopyFar: T.BufferGeometry | undefined;
-            gltf.scene.traverse(obj => {
-                if (!(obj instanceof T.Mesh)) return;
-                const g = obj.geometry.clone();
-                g.computeBoundingBox();
-                g.computeBoundingSphere();
-                const lname = obj.name.toLowerCase();
-                if (lname.includes('trunk')) trunk = g;
-                else if (lname.includes('canopyfar')) canopyFar = g;
-                else if (lname.includes('canopy')) canopy = g;
-            });
-            return trunk && canopy ? { trunk, canopy, canopyFar: canopyFar ?? canopy } : undefined;
-        };
-        try {
-            const elmUrl = new URL('../../../resource/flora/guofeng_elm.glb', import.meta.url).href;
-            const pineUrl = new URL('../../../resource/flora/guofeng_pine.glb', import.meta.url).href;
-            const oakUrl = new URL('../../../resource/flora/guofeng_oak.glb', import.meta.url).href;
-            const [elm, pine, oak] = await Promise.all([
-                loadPair(elmUrl),
-                loadPair(pineUrl),
-                loadPair(oakUrl),
-            ]);
-            if (this.disposed) {
-                for (const pair of [elm, pine, oak]) {
-                    pair?.trunk.dispose();
-                    pair?.canopy.dispose();
-                }
-                return;
+        const kit = await loadSharedGuofengTreeKit();
+        if (!kit || this.disposed) return;
+        const { elm, pine, oak } = kit;
+        const mapping = [elm, pine, oak, oak, pine];
+        const oldGeos = new Set<T.BufferGeometry>();
+        for (let form = 0; form < this.valleyTrees.length; form++) {
+            const pair = mapping[form];
+            if (!pair) continue;
+            oldGeos.add(this.valleyTrees[form].near.trunk);
+            oldGeos.add(this.valleyTrees[form].near.canopy);
+            oldGeos.add(this.valleyTrees[form].far.trunk);
+            oldGeos.add(this.valleyTrees[form].far.canopy);
+            this.valleyTrees[form].near = { trunk: pair.trunk, canopy: pair.canopy };
+            this.valleyTrees[form].far = { trunk: pair.trunk, canopy: pair.canopyFar };
+            for (const entry of this.activeValleyEntries) {
+                if (entry.form !== form) continue;
+                const nextNear = entry.part === 'trunk' ? pair.trunk : pair.canopy;
+                const nextFar = entry.part === 'trunk' ? pair.trunk : pair.canopyFar;
+                const wasFar = entry.mesh.geometry === entry.far;
+                entry.near = nextNear;
+                entry.far = nextFar;
+                entry.mesh.geometry = wasFar ? nextFar : nextNear;
             }
-            const mapping = [elm, pine, oak, oak, pine];
-            const oldGeos = new Set<T.BufferGeometry>();
-            for (let form = 0; form < this.valleyTrees.length; form++) {
-                const pair = mapping[form];
-                if (!pair) continue;
-                oldGeos.add(this.valleyTrees[form].near.trunk);
-                oldGeos.add(this.valleyTrees[form].near.canopy);
-                oldGeos.add(this.valleyTrees[form].far.trunk);
-                oldGeos.add(this.valleyTrees[form].far.canopy);
-                this.valleyTrees[form].near = { trunk: pair.trunk, canopy: pair.canopy };
-                this.valleyTrees[form].far = { trunk: pair.trunk, canopy: pair.canopyFar };
-                for (const entry of this.activeValleyEntries) {
-                    if (entry.form !== form) continue;
-                    const nextNear = entry.part === 'trunk' ? pair.trunk : pair.canopy;
-                    const nextFar = entry.part === 'trunk' ? pair.trunk : pair.canopyFar;
-                    const wasFar = entry.mesh.geometry === entry.far;
-                    entry.near = nextNear;
-                    entry.far = nextFar;
-                    entry.mesh.geometry = wasFar ? nextFar : nextNear;
-                }
-            }
-            // Also upgrade upland broadleaf & mountain pine trees across high ridges (霁雪天阶, 丹枫峡, 青崖峰林)
-            if (oak) {
-                oldGeos.add(this.broadTrunk);
-                oldGeos.add(this.broadCrown);
-                oldGeos.add(this.broadMid);
-                this.broadTrunk = oak.trunk;
-                this.broadCrown = oak.canopy;
-                this.broadMid = oak.canopyFar;
-                for (const entry of this.activeValleyEntries) {
-                    if (entry.form !== 100) continue;
-                    const nextNear = entry.part === 'trunk' ? oak.trunk : oak.canopy;
-                    const nextFar = entry.part === 'trunk' ? oak.trunk : oak.canopyFar;
-                    const wasFar = entry.mesh.geometry === entry.far;
-                    entry.near = nextNear;
-                    entry.far = nextFar;
-                    entry.mesh.geometry = wasFar ? nextFar : nextNear;
-                }
-            }
-            if (pine) {
-                oldGeos.add(this.pineTrunk);
-                oldGeos.add(this.pineCrown);
-                oldGeos.add(this.pineMid);
-                this.pineTrunk = pine.trunk;
-                this.pineCrown = pine.canopy;
-                this.pineMid = pine.canopyFar;
-                for (const entry of this.activeValleyEntries) {
-                    if (entry.form !== 101) continue;
-                    const nextNear = entry.part === 'trunk' ? pine.trunk : pine.canopy;
-                    const nextFar = entry.part === 'trunk' ? pine.trunk : pine.canopyFar;
-                    const wasFar = entry.mesh.geometry === entry.far;
-                    entry.near = nextNear;
-                    entry.far = nextFar;
-                    entry.mesh.geometry = wasFar ? nextFar : nextNear;
-                }
-            }
-            oldGeos.forEach(g => g.dispose());
-        } catch (err) {
-            console.warn('Guofeng Blender tree GLBs failed to load, keeping procedural fallback:', err);
         }
+        // Also upgrade upland broadleaf & mountain pine trees across high ridges (霁雪天阶, 丹枫峡, 青崖峰林)
+        if (oak) {
+            oldGeos.add(this.broadTrunk);
+            oldGeos.add(this.broadCrown);
+            oldGeos.add(this.broadMid);
+            this.broadTrunk = oak.trunk;
+            this.broadCrown = oak.canopy;
+            this.broadMid = oak.canopyFar;
+            for (const entry of this.activeValleyEntries) {
+                if (entry.form !== 100) continue;
+                const nextNear = entry.part === 'trunk' ? oak.trunk : oak.canopy;
+                const nextFar = entry.part === 'trunk' ? oak.trunk : oak.canopyFar;
+                const wasFar = entry.mesh.geometry === entry.far;
+                entry.near = nextNear;
+                entry.far = nextFar;
+                entry.mesh.geometry = wasFar ? nextFar : nextNear;
+            }
+        }
+        if (pine) {
+            oldGeos.add(this.pineTrunk);
+            oldGeos.add(this.pineCrown);
+            oldGeos.add(this.pineMid);
+            this.pineTrunk = pine.trunk;
+            this.pineCrown = pine.canopy;
+            this.pineMid = pine.canopyFar;
+            for (const entry of this.activeValleyEntries) {
+                if (entry.form !== 101) continue;
+                const nextNear = entry.part === 'trunk' ? pine.trunk : pine.canopy;
+                const nextFar = entry.part === 'trunk' ? pine.trunk : pine.canopyFar;
+                const wasFar = entry.mesh.geometry === entry.far;
+                entry.near = nextNear;
+                entry.far = nextFar;
+                entry.mesh.geometry = wasFar ? nextFar : nextNear;
+            }
+        }
+        oldGeos.forEach(g => g.dispose());
     }
 
     create(x: number, z: number, density: number,lod=0,groundGrass=true): T.Group {
@@ -472,12 +488,12 @@ export class Vegetation {
                     dummy.scale.set(s*(1.05+randomAt(px,pz,85)*.3),s*(.96+randomAt(px,pz,87)*.22),s*.98);
                     if(px < -360 && pz < -100 && pz > -1000) {
                         const autumn = this.isGuofeng
-                            ? ['#cc5636','#db7d3a','#e2ac48','#b5432f','#d18d3e']
+                            ? ['#e26d46','#ee964c','#f0c05a','#cf583e','#e4a44e']
                             : ['#fa8054','#f5a953','#ffe36d','#eb6a53','#fac66c'];
                         color.set(autumn[Math.floor(randomAt(px,pz,86)*autumn.length)])
-                            .multiplyScalar(this.isGuofeng ? (.96+randomAt(px,pz,88)*.18) : (1.20+randomAt(px,pz,88)*.35));
+                            .multiplyScalar(this.isGuofeng ? (.98+randomAt(px,pz,88)*.16) : (1.20+randomAt(px,pz,88)*.35));
                     } else if (this.isGuofeng) {
-                        const guofeng=['#98ad6e','#849e68','#a4b472','#769268','#acba78','#80986e'];
+                        const guofeng=['#b0c488','#9cb680','#bccb8e','#8eac80','#c2cf92','#96b084'];
                         const pick = Math.floor(randomAt(px,pz,86)*guofeng.length);
                         color.set(guofeng[pick]).multiplyScalar(.96+randomAt(px,pz,88)*.16);
                     } else {
@@ -489,9 +505,9 @@ export class Vegetation {
                 }
                 else if(kind===8) {
                     const palette = this.isGuofeng
-                        ? ['#a0b270','#8da46a','#7c9768','#acb874','#728e6c']
+                        ? ['#b6c88a','#a2ba82','#90ae80','#c2ce8e','#88a684']
                         : ['#d4ee82','#a8df84','#7fd18e','#c8eb7c','#4cb3a4'];
-                    color.set(palette[valleyForm!]).multiplyScalar(.94+randomAt(px,pz,93)*.18);
+                    color.set(palette[valleyForm!]).multiplyScalar(.96+randomAt(px,pz,93)*.16);
                 }
                 else if(kind===9) {
                     dummy.scale.set(s*1.30,s*.48,s);

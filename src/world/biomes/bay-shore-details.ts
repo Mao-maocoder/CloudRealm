@@ -2,7 +2,8 @@ import * as T from 'three';
 import { bayPavilionIsland,lakes,lakeShorePoint } from '../geo/geo-core';
 import { heightAt,randomAt,trailDistance } from '../geo/height';
 import { makeGrassTuft,makeLeafTexture,makeTreeCanopy,makeTreeTrunk } from '../flora/flora-geometry';
-import { windify,type WindUniforms } from '../flora/vegetation';
+import { loadSharedGuofengTreeKit, windify,type WindUniforms } from '../flora/vegetation';
+import { readArtStyle } from '../../config/settings';
 import { addSolid } from '../physics/solid-world';
 import { makeShoreStoneGeometry, makeShoreStoneMaterial } from '../../rendering/shore-stone';
 
@@ -47,13 +48,21 @@ function populateIslandPavilion(group:T.Group,wind:WindUniforms) {
         const cx=x+px*Math.cos(.32)+pz*Math.sin(.32),cz=z-px*Math.sin(.32)+pz*Math.cos(.32);
         addSolid(group,{minX:cx-.34,maxX:cx+.34,minZ:cz-.34,maxZ:cz+.34,minY:y,maxY:y+6.4});
     }
+    const isGuofeng = readArtStyle() === 'guofeng';
     const trees=[[20,13,1.58],[30,8,1.17],[35,20,1.35],[4,-17,1.18],[-20,-19,.95],[15,26,.96]];
     const trunk=new T.InstancedMesh(makeTreeTrunk('broadleaf'),
-        new T.MeshLambertMaterial({color:'#84624d',vertexColors:true}),trees.length);
-    const leaves=new T.MeshLambertMaterial({map:makeLeafTexture(),color:'#accd74',
-        alphaTest:.36,alphaToCoverage:true,vertexColors:true,side:T.DoubleSide});
+        new T.MeshLambertMaterial({color:isGuofeng ? '#5e4c3c' : '#84624d',vertexColors:true}),trees.length);
+    const leaves=new T.MeshLambertMaterial({map:makeLeafTexture(false, isGuofeng),color:isGuofeng ? '#8ea46c' : '#accd74',
+        alphaTest:isGuofeng ? .34 : .36,alphaToCoverage:!isGuofeng,vertexColors:true,side:T.DoubleSide});
     windify(leaves,wind,.17,6.3);
     const crown=new T.InstancedMesh(makeTreeCanopy('broadleaf',false),leaves,trees.length);
+    if (isGuofeng) {
+        void loadSharedGuofengTreeKit().then(kit => {
+            if (!kit?.oak) return;
+            trunk.geometry = kit.oak.trunk;
+            crown.geometry = kit.oak.canopy;
+        });
+    }
     const placement=new T.Object3D();
     for(const [i,[dx,dz,scale]] of trees.entries()){
         const px=bayPavilionIsland.x+dx,pz=bayPavilionIsland.z+dz,ground=heightAt(px,pz);

@@ -4,7 +4,8 @@ import { waterSurfaceAt } from '../geo/geo-core';
 import { formations, geologyRandom, gorgeDistance, peakCreek, terraces } from '../geo/peakland-plan';
 import { rockPoint, rockSupport } from '../biomes/peakland-rock';
 import { makeLeafTexture, makeTreeCanopy, makeTreeTrunk, makeValleyShrub } from './flora-geometry';
-import { windify, type WindUniforms } from './vegetation';
+import { loadSharedGuofengTreeKit, windify, type WindUniforms } from './vegetation';
+import { readArtStyle } from '../../config/settings';
 
 type Plant = 'pine' | 'broadleaf' | 'shrub' | 'stone';
 type Placement = { x:number; y:number; z:number; size:number; angle:number; lean:number; green:number };
@@ -134,10 +135,11 @@ export class PeaklandFlora extends T.Group {
             scatter('courts',i%3?'pine':'shrub',x,y,z,size,id,.66);
         }
 
-        const leafTexture = makeLeafTexture();
-        const barkMaterial = new T.MeshLambertMaterial({ color: '#705844', vertexColors: true });
+        const isGuofeng = readArtStyle() === 'guofeng';
+        const leafTexture = makeLeafTexture(false, isGuofeng);
+        const barkMaterial = new T.MeshLambertMaterial({ color: isGuofeng ? '#5c4a3a' : '#705844', vertexColors: true });
         const leafMaterial = new T.MeshLambertMaterial({
-            map: leafTexture, alphaTest: .36, alphaToCoverage: true, vertexColors: true, side: T.DoubleSide,
+            map: leafTexture, alphaTest: isGuofeng ? .34 : .36, alphaToCoverage: !isGuofeng, vertexColors: true, side: T.DoubleSide,
         });
         const stoneMaterial = new T.MeshLambertMaterial({ vertexColors: true });
         if (wind) windify(leafMaterial, wind, .16, 7.5);
@@ -152,6 +154,7 @@ export class PeaklandFlora extends T.Group {
         const stoneFine = stoneGeometry(true);
         const stoneCoarse = stoneGeometry(false);
 
+        const gfPeakBatches: Array<{ kind: 'pine' | 'broadleaf'; trunkEntry: { mesh: T.InstancedMesh; fine: T.BufferGeometry; coarse: T.BufferGeometry; length: number }; crownEntry: { mesh: T.InstancedMesh; fine: T.BufferGeometry; coarse: T.BufferGeometry; length: number } }> = [];
         const dummy=new T.Object3D(),tint=new T.Color();
         for(const tile of tiles.values()){
             if (tile.kind === 'pine' || tile.kind === 'broadleaf') {
@@ -170,9 +173,9 @@ export class PeaklandFlora extends T.Group {
                     trunk.setMatrixAt(i, dummy.matrix);
                     crown.setMatrixAt(i, dummy.matrix);
                     if (tile.kind === 'pine') {
-                        tint.setHSL(.34 + (i % 5) * .014, .38, .46 * p.green + .12);
+                        tint.setHSL(.34 + (i % 5) * .014, isGuofeng ? .22 : .38, .44 * p.green + .14);
                     } else {
-                        tint.setHSL(.24 + (i % 5) * .018, .48, .50 * p.green + .14);
+                        tint.setHSL(.25 + (i % 5) * .018, isGuofeng ? .26 : .48, .46 * p.green + .16);
                     }
                     crown.setColorAt(i, tint);
                 }
@@ -184,10 +187,10 @@ export class PeaklandFlora extends T.Group {
                 crown.geometry = coarse;
                 trunk.receiveShadow = crown.receiveShadow = false;
                 this.add(trunk, crown);
-                this.batches.push(
-                    { mesh: trunk, fine: trunkGeo, coarse: trunkGeo, length: 12 },
-                    { mesh: crown, fine, coarse, length: 12 },
-                );
+                const trunkEntry = { mesh: trunk, fine: trunkGeo, coarse: trunkGeo, length: 12 };
+                const crownEntry = { mesh: crown, fine, coarse, length: 12 };
+                this.batches.push(trunkEntry, crownEntry);
+                if (isGuofeng) gfPeakBatches.push({ kind: tile.kind, trunkEntry, crownEntry });
             } else {
                 const fine = tile.kind === 'shrub' ? shrubGeo : stoneFine;
                 const coarse = tile.kind === 'shrub' ? shrubGeo : stoneCoarse;
@@ -217,6 +220,22 @@ export class PeaklandFlora extends T.Group {
                 this.add(mesh);
                 this.batches.push({ mesh, fine, coarse, length: 3.4 });
             }
+        }
+        if (isGuofeng && gfPeakBatches.length) {
+            void loadSharedGuofengTreeKit().then(kit => {
+                if (!kit) return;
+                for (const item of gfPeakBatches) {
+                    const pair = item.kind === 'pine' ? kit.pine : kit.oak;
+                    if (!pair) continue;
+                    item.trunkEntry.fine = pair.trunk;
+                    item.trunkEntry.coarse = pair.trunk;
+                    item.trunkEntry.mesh.geometry = pair.trunk;
+                    const wasFine = item.crownEntry.mesh.geometry === item.crownEntry.fine;
+                    item.crownEntry.fine = pair.canopy;
+                    item.crownEntry.coarse = pair.canopyFar;
+                    item.crownEntry.mesh.geometry = wasFine ? pair.canopy : pair.canopyFar;
+                }
+            });
         }
     }
 

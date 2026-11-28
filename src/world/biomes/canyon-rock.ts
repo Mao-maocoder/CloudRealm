@@ -5,9 +5,9 @@ import { addSolid, releaseSolids } from '../physics/solid-world';
 import { makeCanyonStone } from '../../rendering/canyon-stone';
 import { canyonLandforms, canyonRims, gorgeInfluence, ramp, rimAt, type CanyonRim } from '../geo/canyon-plan';
 import { makeLeafTexture, makeTreeCanopy, makeTreeTrunk, makeValleyTree } from '../flora/flora-geometry';
-import { windify, type WindUniforms } from '../flora/vegetation';
+import { loadSharedGuofengTreeKit, windify, type WindUniforms } from '../flora/vegetation';
 import { toonMaterial } from '../../rendering/materials';
-import type { Quality } from '../../config/settings';
+import { readArtStyle, type Quality } from '../../config/settings';
 
 // Each cross-section runs from the valley to the back of the mesa. Some
 // courses lean out above the course below, which a height map cannot express.
@@ -244,14 +244,15 @@ export class CanyonRockField extends T.Group {
             this.ownedGeometries.push(model.near.trunk,model.near.canopy,model.far.trunk,model.far.canopy);
         this.ownedGeometries.push(pineTrunkGeo,pineCrownGeo,pineCrownFar);
 
-        this.leafTexture=makeLeafTexture();
+        const isGuofeng = readArtStyle() === 'guofeng';
+        this.leafTexture=makeLeafTexture(false, isGuofeng);
         const valleyLeaves=new T.MeshLambertMaterial({
-            map:this.leafTexture,alphaTest:.36,alphaToCoverage:true,vertexColors:true,side:T.DoubleSide,
+            map:this.leafTexture,alphaTest:isGuofeng ? .34 : .36,alphaToCoverage:!isGuofeng,vertexColors:true,side:T.DoubleSide,
         });
-        const valleyBark=new T.MeshLambertMaterial({color:'#73513a',vertexColors:true});
-        const pineBark=toonMaterial('#856b59',{vertexColors:true});
+        const valleyBark=new T.MeshLambertMaterial({color:isGuofeng ? '#5e4c3c' : '#73513a',vertexColors:true});
+        const pineBark=isGuofeng ? valleyBark : toonMaterial('#856b59',{vertexColors:true});
         const pineCrownMat=new T.MeshLambertMaterial({
-            map:this.leafTexture,alphaTest:.36,alphaToCoverage:true,vertexColors:true,side:T.DoubleSide,
+            map:this.leafTexture,alphaTest:isGuofeng ? .34 : .36,alphaToCoverage:!isGuofeng,vertexColors:true,side:T.DoubleSide,
         });
         if(wind){
             windify(valleyLeaves,wind,.27,9.0);
@@ -279,7 +280,8 @@ export class CanyonRockField extends T.Group {
         }
 
         const transform=new T.Object3D(),shade=new T.Color();
-        const valleyPalette=['#c8d88e','#aad096','#bfd6a4'];
+        const valleyPalette=isGuofeng ? ['#8fa468','#7b9464','#98aa6c'] : ['#c8d88e','#aad096','#bfd6a4'];
+        const gfSwaps: Array<{ form: number; isPine: boolean; trunkEntry: {mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry}; crownEntry: {mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry} }> = [];
         valleyBuckets.forEach((items,form)=>{
             if(!items.length)return;
             const {near,far}=valleyModels[form];
@@ -294,7 +296,7 @@ export class CanyonRockField extends T.Group {
                 transform.updateMatrix();
                 trunk.setMatrixAt(i,transform.matrix);
                 crown.setMatrixAt(i,transform.matrix);
-                shade.set(valleyPalette[form]).multiplyScalar(.82+randomAt(p.x,p.z,843)*.32);
+                shade.set(valleyPalette[form]).multiplyScalar(.88+randomAt(p.x,p.z,843)*.24);
                 crown.setColorAt(i,shade);
             });
             trunk.instanceMatrix.needsUpdate=true;
@@ -307,7 +309,10 @@ export class CanyonRockField extends T.Group {
             trunk.name=`canyon-broadleaf-trunks-${form}`;
             crown.name=`canyon-broadleaf-crowns-${form}`;
             this.woods.push(trunk,crown);
-            this.treeBatches.push({mesh:trunk,near:near.trunk,far:far.trunk},{mesh:crown,near:near.canopy,far:far.canopy});
+            const trunkEntry = {mesh:trunk,near:near.trunk,far:far.trunk};
+            const crownEntry = {mesh:crown,near:near.canopy,far:far.canopy};
+            this.treeBatches.push(trunkEntry,crownEntry);
+            gfSwaps.push({ form, isPine: false, trunkEntry, crownEntry });
             this.add(trunk,crown);
         });
 
@@ -323,7 +328,7 @@ export class CanyonRockField extends T.Group {
                 transform.updateMatrix();
                 trunk.setMatrixAt(i,transform.matrix);
                 crown.setMatrixAt(i,transform.matrix);
-                shade.setHSL(.36+randomAt(p.x,p.z,845)*.06,.26+randomAt(p.x,p.z,846)*.14,.46+randomAt(p.x,p.z,847)*.14);
+                shade.setHSL(.34+randomAt(p.x,p.z,845)*.06,isGuofeng ? .20+randomAt(p.x,p.z,846)*.10 : .26+randomAt(p.x,p.z,846)*.14,.44+randomAt(p.x,p.z,847)*.14);
                 crown.setColorAt(i,shade);
             });
             trunk.instanceMatrix.needsUpdate=true;
@@ -336,8 +341,29 @@ export class CanyonRockField extends T.Group {
             trunk.name='canyon-pine-trunks';
             crown.name='canyon-pine-crowns';
             this.woods.push(trunk,crown);
-            this.treeBatches.push({mesh:trunk,near:pineTrunkGeo,far:pineTrunkGeo},{mesh:crown,near:pineCrownGeo,far:pineCrownFar});
+            const trunkEntry = {mesh:trunk,near:pineTrunkGeo,far:pineTrunkGeo};
+            const crownEntry = {mesh:crown,near:pineCrownGeo,far:pineCrownFar};
+            this.treeBatches.push(trunkEntry,crownEntry);
+            if (isGuofeng) gfSwaps.push({ form: 0, isPine: true, trunkEntry, crownEntry });
             this.add(trunk,crown);
+        }
+        if (isGuofeng && gfSwaps.length) {
+            void loadSharedGuofengTreeKit().then(kit => {
+                if (!kit) return;
+                const map = [kit.elm, kit.oak, kit.pine];
+                for (const item of gfSwaps) {
+                    const pair = item.isPine ? kit.pine : (map[item.form] ?? kit.oak);
+                    if (!pair) continue;
+                    const wasFarT = item.trunkEntry.mesh.geometry === item.trunkEntry.far;
+                    item.trunkEntry.near = pair.trunk;
+                    item.trunkEntry.far = pair.trunk;
+                    item.trunkEntry.mesh.geometry = wasFarT ? pair.trunk : pair.trunk;
+                    const wasFarC = item.crownEntry.mesh.geometry === item.crownEntry.far;
+                    item.crownEntry.near = pair.canopy;
+                    item.crownEntry.far = pair.canopyFar;
+                    item.crownEntry.mesh.geometry = wasFarC ? pair.canopyFar : pair.canopy;
+                }
+            });
         }
     }
 
