@@ -6,6 +6,7 @@ const GIANT_SWORD_CAST_URL = new URL('../../resource/audio/giant_sword_cast.mp3'
 const GIANT_SWORD_IMPACT_URL = new URL('../../resource/audio/giant_sword_impact.mp3', import.meta.url).href;
 const SWORD_ARRAY_START_URL = new URL('../../resource/audio/sword_array_start.mp3', import.meta.url).href;
 const SWORD_ARRAY_RAIN_URL = new URL('../../resource/audio/sword_array_rain.mp3', import.meta.url).href;
+const SWORD_WAVE_URL = new URL('../../resource/audio/sword_wave.mp3', import.meta.url).href;
 
 export type SurfaceKind = GroundSample['kind'];
 
@@ -368,11 +369,15 @@ export class AudioManager {
     playSwordWave() {
         const ctx = this.ready();
         if (!ctx) return;
-        const now = ctx.currentTime;
-        // Crisp sword-ring harmonic + razor air slice
-        this.spawnTone(ctx, now, 0.36, 'sine', 1480, 1120, 0.18);
-        this.spawnTone(ctx, now, 0.28, 'triangle', 2240, 1660, 0.11);
-        this.spawnNoiseBurst(ctx, now, 0.22, 'bandpass', 2400, 1.8, 0.28);
+        const played = this.playSfxBuffer(ctx, 'swordWave', SWORD_WAVE_URL, {
+            gain: 0.95,
+            playbackRate: 0.96 + Math.random() * 0.08,
+            fadeIn: 0.005,
+            fadeOut: 0.04,
+        });
+        if (!played) {
+            this.playSfxFallbackAudio(SWORD_WAVE_URL, 0.95);
+        }
     }
 
     playFireballRelease(power = 0.5) {
@@ -656,6 +661,7 @@ export class AudioManager {
         this.preloadSfxBuffer(ctx, 'giantSwordImpact', GIANT_SWORD_IMPACT_URL);
         this.preloadSfxBuffer(ctx, 'swordArrayStart', SWORD_ARRAY_START_URL);
         this.preloadSfxBuffer(ctx, 'swordArrayRain', SWORD_ARRAY_RAIN_URL);
+        this.preloadSfxBuffer(ctx, 'swordWave', SWORD_WAVE_URL);
     }
 
     private preloadSfxBuffer(ctx: AudioContext, key: string, url: string) {
