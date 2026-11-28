@@ -6,7 +6,7 @@ import { bounds } from '../geo/geo-core';
 import type { SurfaceWake } from '../../effects/surface-wake';
 import { createGrassScorchUniforms } from '../../effects/fireball-impact';
 import { detectDevice } from '../../config/device';
-import type { Quality } from '../../config/settings';
+import { readArtStyle, type Quality } from '../../config/settings';
 import { heightAt, slopeAt, trailDistance, valueNoise } from '../geo/height';
 import { waterSurfaceAt } from '../geo/geo-core';
 import { meadowHabitatAt } from '../geo/meadow-distribution';
@@ -313,7 +313,7 @@ export class Meadow {
                     .replace('float dotNL = saturate( dot( geometryNormal, directLight.direction ) );','float dotNL = saturate( dot( geometryNormal, directLight.direction ) * .38 + .62 );'));
                 shader.fragmentShader = (flower?flowerFragmentGLSL:'')
                     +`${aerialPerspectiveGLSL}\nuniform vec3 uVegTransColor,uVegRimColor;uniform float uVegTransStrength,uVegRimStrength;\n`
-                    +'varying vec3 vBladeTint,vBladeWorld;varying float vBladeTip;\n'+shader.fragmentShader
+                    +'varying vec3 vBladeTint,vBladeWorld;varying float vBladeTip,vGfValley;\n'+shader.fragmentShader
                     .replace('#include <fog_fragment>', '')
                     .replace('#include <color_fragment>','#include <color_fragment>\n diffuseColor.rgb*=vBladeTint;'+(flower?flowerColourGLSL:''))
                     .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
@@ -322,14 +322,20 @@ export class Meadow {
                         // Completely matte painterly Ghibli shading: cool fresh emerald in shade, warm vibrant spring-lime in sun.
                         vec3 grassShadeTone = mix(vec3(.78, .92, 1.0), vec3(.56, 1.04, .98), uAtmoLight);
                         vec3 grassSunTone = mix(vec3(1.0, 1.02, .98), vec3(1.06, 1.15, .64), uAtmoLight);
-                        reflectedLight.indirectDiffuse *= mix(grassShadeTone, vec3(1.04, 1.10, .78), bladeSunLit);
-                        reflectedLight.directDiffuse *= mix(vec3(1.), grassSunTone, bladeSunLit * .78);
+                        vec3 gfGrassShade = mix(vec3(.76, .88, .96), vec3(.56, .72, .72), uAtmoLight);
+                        vec3 gfGrassSun = mix(vec3(1.0, 1.0, .96), vec3(1.06, 1.02, .84), uAtmoLight);
+                        grassShadeTone = mix(grassShadeTone, gfGrassShade, vGfValley);
+                        grassSunTone = mix(grassSunTone, gfGrassSun, vGfValley);
+                        vec3 grassLitIndirect = mix(vec3(1.04, 1.10, .78), vec3(.96, .96, .86), vGfValley);
+                        reflectedLight.indirectDiffuse *= mix(grassShadeTone, grassLitIndirect, bladeSunLit);
+                        reflectedLight.directDiffuse *= mix(vec3(1.), grassSunTone, bladeSunLit * .74);
                         vec3 bladeView = normalize(cameraPosition - vBladeWorld);
                         vec3 bladeLight = normalize(uAtmoSunDir);
                         float backTrans = pow(max(0., dot(bladeView, -bladeLight)), 2.2);
                         float tipMask = smoothstep(.18, 1., vBladeTip);
-                        vec3 vegGlow = uVegTransColor * uVegTransStrength * (.32 + .68 * backTrans) * tipMask;
-                        reflectedLight.directDiffuse += vegGlow * diffuseColor.rgb * (.05 + .52 * bladeSunLit);`)
+                        float nightTransGate = mix(1.0, 1.0 - uNightFactor * 0.85, vGfValley);
+                        vec3 vegGlow = uVegTransColor * uVegTransStrength * (.30 + .70 * backTrans) * tipMask * nightTransGate;
+                        reflectedLight.directDiffuse += vegGlow * diffuseColor.rgb * (.05 + .48 * bladeSunLit);`)
                     .replace('#include <tonemapping_fragment>',`
                         float bladeDist = length(cameraPosition - vBladeWorld);
                         gl_FragColor.rgb = mix(gl_FragColor.rgb, applyAerialPerspective(gl_FragColor.rgb, vBladeWorld), smoothstep(130., 470., bladeDist));
@@ -337,8 +343,8 @@ export class Meadow {
             };
             const mesh = new T.Mesh(geometry,material);
             mesh.frustumCulled = false;
-            // Only near grass (<20m) samples the PCF shadow map; mid/far grass & flowers use painterly matte shading.
-            mesh.receiveShadow = !flower && i < 3;
+            // Only near grass (<20m) samples the PCF shadow map; in Guofeng mode extend one shell for deeper tree shadows.
+            mesh.receiveShadow = !flower && i < (readArtStyle() === 'guofeng' ? 4 : 3);
             mesh.renderOrder = 2;
             mesh.visible = false;
             this.group.add(mesh);

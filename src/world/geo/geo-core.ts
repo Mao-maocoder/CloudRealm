@@ -47,7 +47,7 @@ function makeRiver(id: string, points: {
     z: number;
 }, t: number) => number, joins?: string): River { return { id, source: points[0], outlet: points.at(-1)!, joins, tributaries: [], samples: points.map((p, i) => { const t = i / (points.length - 1), a = points[Math.max(0, i - 1)], b = points[Math.min(points.length - 1, i + 1)], length = Math.hypot(b.x - a.x, b.z - a.z), waterLevel = level(p, t); return { ...p, waterLevel, halfWidth: width(t), bedLevel: waterLevel - (id === 'main' ? 5.5 : 2.5), flowX: (b.x - a.x) / length, flowZ: (b.z - a.z) / length }; }) }; }
 export const ridges = [
-    [{ x: -1050, z: -2200, h: 380 }, { x: -600, z: -2020, h: 680 }, { x: -100, z: -2200, h: 760 }, { x: 400, z: -2060, h: 720 }, { x: 950, z: -2350, h: 470 }],
+    [{ x: -1050, z: -2200, h: 380 }, { x: -600, z: -2020, h: 680 }, { x: -100, z: -2200, h: 760 }, { x: 400, z: -2060, h: 720 }, { x: 840, z: -2180, h: 320 }, { x: 1180, z: -2120, h: 115 }],
     [{ x: -600, z: -2020, h: 640 }, { x: -850, z: -1550, h: 390 }, { x: -1120, z: -1050, h: 230 }, { x: -1300, z: -400, h: 100 }],
     [{ x: 400, z: -2060, h: 680 }, { x: 750, z: -1590, h: 390 }, { x: 1050, z: -950, h: 220 }, { x: 1280, z: -320, h: 90 }],
     [{ x: -600, z: -2020, h: 650 }, { x: -430, z: -1620, h: 420 }, { x: -570, z: -1150, h: 170 }],

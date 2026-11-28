@@ -227,8 +227,9 @@ export class SkyBirds {
                     if (!gl_FrontFacing) n = -n;
                     float lit = .48 + .52 * max(0., dot(n, uSun));
                     vec3 ivory = mix(vec3(.96, .95, .90), vec3(.86, .91, .95), vTint * .55);
-                    vec3 col = ivory * vShade * lit * mix(vec3(.30, .40, .60), vec3(1.), uAtmoLight);
-                    col = mix(col, applyAerialPerspective(col, vWorld), .48);
+                    ivory = mix(ivory, vec3(1.06, 1.05, 1.02), uGuofengStyle * .65);
+                    vec3 col = ivory * mix(vShade, .72 + .34 * vShade, uGuofengStyle) * lit * mix(vec3(.30, .40, .60), vec3(1.), uAtmoLight);
+                    col = mix(col, applyAerialPerspective(col, vWorld), mix(.48, .28, uGuofengStyle));
                     gl_FragColor = vec4(col, vFade);
                     #include <tonemapping_fragment>
                     #include <colorspace_fragment>

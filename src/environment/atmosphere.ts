@@ -1,13 +1,15 @@
 import * as T from 'three';
-import type { Quality } from '../config/settings';
+import { readArtStyle, type Quality } from '../config/settings';
 import type { Player } from '../player/controller';
 import { Sky } from './sky';
 import { Water } from './water';
 import { Petals } from './petals';
 import { SkyBirds } from './sky-birds';
 import { Fireflies } from './fireflies';
+import { ValleyCloudSea } from './valley-cloud-sea';
 import { DayNightCycle } from './day-night';
 import { atmosphereUniforms } from '../rendering/aerial-perspective';
+import { valleyArtAt } from '../world/geo/valley-art';
 import { art } from '../config/art';
 import { detectDevice } from '../config/device';
 
@@ -21,6 +23,7 @@ export class Atmosphere {
     readonly petals: Petals;
     readonly birds: SkyBirds;
     readonly fireflies: Fireflies;
+    readonly cloudSea: ValleyCloudSea;
     readonly dayNight = new DayNightCycle();
     readonly sunDirection: T.Vector3;
     private quality: Quality;
@@ -50,6 +53,26 @@ export class Atmosphere {
     private readonly omenVegRim = new T.Color('#ddb668');
     private readonly omenFlashTint = new T.Color('#a8b8e6');
     private readonly tmpOmenSun = new T.Color();
+    private readonly isGuofeng = readArtStyle() === 'guofeng';
+    private guofengRegionWeight = readArtStyle() === 'guofeng' ? 1 : 0;
+    private readonly gfSunCol = new T.Color('#ffeed0');
+    private readonly gfAmbCol = new T.Color('#8ba8c4');
+    private readonly gfHemiSky = new T.Color('#9ec0dc');
+    private readonly gfHemiGnd = new T.Color('#2c4435');
+    private readonly gfFillCol = new T.Color('#7ca0bf');
+    private readonly gfFogCol = new T.Color('#b6cce0');
+    private readonly gfAirCol = new T.Color('#6b8fae');
+    private readonly gfSunAirCol = new T.Color('#dce6ec');
+    private readonly gfMistCol = new T.Color('#d8e5ee');
+    private readonly gfDuskMistCol = new T.Color('#ebd8d3');
+    private readonly gfDuskAirCol = new T.Color('#97a6c2');
+    private readonly gfDuskSunAirCol = new T.Color('#f7dfca');
+    private readonly gfWaterBody = new T.Color('#c8d4cf');
+    private readonly gfWaterLow = new T.Color('#b8c8cf');
+    private readonly gfWaterHigh = new T.Color('#6a8292');
+    private readonly gfWaterSpec = new T.Color('#fff4dc');
+    private readonly gfVegTrans = new T.Color('#c2c468');
+    private readonly gfVegRim = new T.Color('#e2d8a6');
     private shadowFrame = 0;
 
     setOmen(
@@ -105,6 +128,7 @@ export class Atmosphere {
         this.petals = new Petals(scene, quality);
         this.birds = new SkyBirds(scene, quality, this.sunDirection);
         this.fireflies = new Fireflies(scene, quality);
+        this.cloudSea = new ValleyCloudSea(scene);
         this.setQuality(quality);
         this.applyDayNight();
     }
@@ -145,6 +169,62 @@ export class Atmosphere {
         atmosphereUniforms.uOmenShock.value.copy(this.omenShock);
         if (this.scene.fog instanceof T.FogExp2) {
             this.scene.fog.density = this.baseFogDensity * (1 + this.omenIntensity * 0.45);
+        }
+
+        if (this.isGuofeng && this.guofengRegionWeight > 0.001) {
+            const gf = this.guofengRegionWeight * (1 - s.nightFactor * 0.72);
+            this.sky.applyGuofengBlend(this.guofengRegionWeight, s.dayFactor);
+            this.sun.color.lerp(this.gfSunCol, gf * 0.72);
+            this.sun.intensity *= T.MathUtils.lerp(1.0, 1.06, gf);
+            this.sun.shadow.intensity = T.MathUtils.lerp(0.86, 0.90, gf);
+            this.ambient.color.lerp(this.gfAmbCol, gf * 0.75);
+            this.ambient.intensity *= T.MathUtils.lerp(1.0, 0.96, gf);
+            this.hemi.color.lerp(this.gfHemiSky, gf * 0.75);
+            this.hemi.groundColor.lerp(this.gfHemiGnd, gf * 0.75);
+            this.hemi.intensity *= T.MathUtils.lerp(1.0, 0.96, gf);
+            this.fill.color.lerp(this.gfFillCol, gf * 0.70);
+            if (this.scene.fog instanceof T.FogExp2) {
+                this.scene.fog.color.lerp(this.gfFogCol, gf * 0.78);
+                this.scene.fog.density *= T.MathUtils.lerp(1.0, 1.05, gf);
+            }
+            atmosphereUniforms.uAtmoAir.value.lerp(this.gfAirCol, gf * 0.80);
+            atmosphereUniforms.uAtmoSunAir.value.lerp(this.gfSunAirCol, gf * 0.74);
+            atmosphereUniforms.uAtmoMist.value.lerp(this.gfMistCol, gf * 0.78);
+            if (s.duskFactor > 0.02) {
+                const dk = s.duskFactor * gf;
+                atmosphereUniforms.uAtmoMist.value.lerp(this.gfDuskMistCol, dk * 0.80);
+                atmosphereUniforms.uAtmoAir.value.lerp(this.gfDuskAirCol, dk * 0.72);
+                atmosphereUniforms.uAtmoSunAir.value.lerp(this.gfDuskSunAirCol, dk * 0.76);
+                if (this.scene.fog instanceof T.FogExp2) {
+                    this.scene.fog.color.lerp(this.gfDuskMistCol, dk * 0.62);
+                }
+            }
+            // Dedicated Guofeng moonlit night calibration: keep character & foliage readable in cool blue-green
+            // without turning night into blue daytime or triggering white leaf rim speckles.
+            if (s.nightFactor > 0.02) {
+                const nk = s.nightFactor * this.guofengRegionWeight;
+                this.ambient.intensity *= T.MathUtils.lerp(1.0, 1.26, nk);
+                this.hemi.intensity *= T.MathUtils.lerp(1.0, 1.20, nk);
+                this.fill.intensity *= T.MathUtils.lerp(1.0, 1.32, nk);
+                this.sun.intensity *= T.MathUtils.lerp(1.0, 1.12, nk);
+                atmosphereUniforms.uVegRimStrength.value *= T.MathUtils.lerp(1.0, 0.22, nk);
+                atmosphereUniforms.uVegTransStrength.value *= T.MathUtils.lerp(1.0, 0.35, nk);
+            }
+            atmosphereUniforms.uHeightFogDensity.value = T.MathUtils.lerp(
+                atmosphereUniforms.uHeightFogDensity.value,
+                Math.max(atmosphereUniforms.uHeightFogDensity.value, 0.24),
+                gf * 0.80,
+            );
+            atmosphereUniforms.uWaterBodyTint.value.lerp(this.gfWaterBody, gf * 0.76);
+            atmosphereUniforms.uWaterSkyLow.value.lerp(this.gfWaterLow, gf * 0.76);
+            atmosphereUniforms.uWaterSkyHigh.value.lerp(this.gfWaterHigh, gf * 0.72);
+            atmosphereUniforms.uWaterSpec.value.lerp(this.gfWaterSpec, gf * 0.65);
+            atmosphereUniforms.uVegTransColor.value.lerp(this.gfVegTrans, gf * 0.88);
+            atmosphereUniforms.uVegTransStrength.value *= T.MathUtils.lerp(1.0, 0.65, gf);
+            atmosphereUniforms.uVegRimColor.value.lerp(this.gfVegRim, gf * 0.82);
+            atmosphereUniforms.uVegRimStrength.value *= T.MathUtils.lerp(1.0, 0.55, gf);
+        } else {
+            this.sun.shadow.intensity = 0.86;
         }
 
         if (this.omenIntensity > 0.001) {
@@ -211,6 +291,9 @@ export class Atmosphere {
     }
 
     update(time: number, camera: T.Camera, player: Player, dt = 0) {
+        if (this.isGuofeng) {
+            this.guofengRegionWeight = 1;
+        }
         this.dayNight.step(dt);
         this.applyDayNight();
         const lightDir = this.dayNight.state.lightDirection;
@@ -230,6 +313,7 @@ export class Atmosphere {
         this.petals.update(time, camera);
         this.birds.update(time, camera);
         this.fireflies.update(time, player.position);
+        this.cloudSea.update(time, camera);
     }
 
     dispose() {
@@ -238,5 +322,6 @@ export class Atmosphere {
         this.petals.dispose();
         this.birds.dispose();
         this.fireflies.dispose();
+        this.cloudSea.dispose();
     }
 }

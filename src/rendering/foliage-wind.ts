@@ -3,6 +3,7 @@ import { art } from '../config/art';
 import { meadowWindGLSL } from '../effects/meadow-trail';
 import { surfaceWakeGLSL } from '../effects/surface-wake';
 import { aerialPerspectiveGLSL, atmosphereUniforms } from './aerial-perspective';
+import { valleyArtGLSL } from '../world/geo/valley-art';
 
 export interface WindUniforms {
     time: { value: number };
@@ -85,29 +86,50 @@ export function windify(
                 #endif
             `,
         );
-        shader.fragmentShader = `${aerialPerspectiveGLSL}\nuniform vec3 uVegTransColor,uVegRimColor;uniform float uVegTransStrength,uVegRimStrength;varying vec3 vLeafWorld;varying float vLeafCrown;varying vec3 vLeafCrownNormal;\n`
+        shader.fragmentShader = `${aerialPerspectiveGLSL}\n${valleyArtGLSL}\nuniform vec3 uVegTransColor,uVegRimColor;uniform float uVegTransStrength,uVegRimStrength;varying vec3 vLeafWorld;varying float vLeafCrown;varying vec3 vLeafCrownNormal;\n`
             + shader.fragmentShader
                 .replace('#include <fog_fragment>', '')
+                .replace('#include <alphatest_fragment>', `
+                if (uGuofengStyle > 0.5) {
+                    float mipDist = length(cameraPosition - vLeafWorld);
+                    diffuseColor.a = clamp(diffuseColor.a * (1.0 + smoothstep(28.0, 200.0, mipDist) * 0.45), 0.0, 1.0);
+                }
+                #include <alphatest_fragment>`)
                 .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
                 vec3 leafCN = normalize(vLeafCrownNormal);
                 vec3 leafSunN = normalize(uAtmoSunDir);
-                float leafSunWrap = smoothstep(-.42, .74, dot(leafCN, leafSunN));
-                float leafSkyUp = smoothstep(-.52, .66, leafCN.y);
-                float leafLitMix = clamp(leafSkyUp * .55 + leafSunWrap * .45, 0., 1.);
+                float leafSunWrap = smoothstep(-.45, .74, dot(leafCN, leafSunN));
+                float leafSkyUp = smoothstep(-.55, .68, leafCN.y);
+                float leafLitMix = clamp(leafSkyUp * .52 + leafSunWrap * .48, 0., 1.);
+                float gfLeaf = uGuofengStyle;
+                float dayGate = 1.0 - uNightFactor * 0.85;
                 // Dreamy turquoise-teal undersides contrasting with airy sunlit chartreuse-lime tops.
                 vec3 coolShadeTint = mix(vec3(.66, .84, .96), vec3(.44, .90, 1.04), uAtmoLight);
                 vec3 warmCrownTint = mix(vec3(.92, .96, 1.0), vec3(1.18, 1.24, .76), uAtmoLight);
+                // Guofeng: natural cool jade-green underside (never crushed black), warm sunlit upper crown, clean moonlit night.
+                vec3 gfCoolShade = mix(vec3(.60, .76, .90), vec3(.72, .88, .82), uAtmoLight);
+                vec3 gfWarmCrown = mix(vec3(.78, .90, 1.04), vec3(1.28, 1.24, .88), uAtmoLight);
+                coolShadeTint = mix(coolShadeTint, gfCoolShade, gfLeaf);
+                warmCrownTint = mix(warmCrownTint, gfWarmCrown, gfLeaf);
                 reflectedLight.indirectDiffuse *= mix(coolShadeTint, warmCrownTint, leafLitMix);
-                reflectedLight.directDiffuse *= mix(vec3(.84, 1.02, 1.08), vec3(1.12, 1.18, .74), leafSunWrap * uAtmoLight);
+                vec3 directCrownTint = mix(
+                    mix(vec3(.84, 1.02, 1.08), vec3(1.12, 1.18, .74), leafSunWrap * uAtmoLight),
+                    mix(vec3(.78, .92, 1.00), vec3(1.24, 1.18, .86), leafSunWrap * uAtmoLight),
+                    gfLeaf
+                );
+                reflectedLight.directDiffuse *= directCrownTint;
                 vec3 leafViewDir = normalize(cameraPosition - vLeafWorld);
                 float leafBackLit = pow(max(0., dot(leafViewDir, -leafSunN)), 2.1);
-                float leafSunGlow = leafSunWrap * (.36 + .64 * leafBackLit) * (.45 + .55 * smoothstep(.15, .92, vLeafCrown));
-                reflectedLight.indirectDiffuse += diffuseColor.rgb * uVegTransColor * uVegTransStrength * leafSunGlow * .95;
-                float leafRim = pow(1. - abs(dot(leafViewDir, leafCN)), 1.7) * (.35 + .65 * leafSkyUp) * (.42 + .58 * leafSunWrap);
-                reflectedLight.indirectDiffuse += diffuseColor.rgb * uVegRimColor * uVegRimStrength * leafRim * .85;`)
+                float leafSunGlow = leafSunWrap * (.34 + .66 * leafBackLit) * (.45 + .55 * smoothstep(.15, .92, vLeafCrown));
+                reflectedLight.indirectDiffuse += diffuseColor.rgb * uVegTransColor * uVegTransStrength * leafSunGlow * mix(.95, .72 * dayGate, gfLeaf);
+                float leafRim = pow(1. - abs(dot(leafViewDir, leafCN)), 2.0) * (.35 + .65 * leafSkyUp) * (.42 + .58 * leafSunWrap);
+                // Suppress harsh grazing white/grey rim sparkles at night in Guofeng mode.
+                reflectedLight.indirectDiffuse += diffuseColor.rgb * uVegRimColor * uVegRimStrength * leafRim * mix(.85, .36 * dayGate, gfLeaf);`)
                 .replace('#include <tonemapping_fragment>', `
                 float leafDist = length(cameraPosition - vLeafWorld);
-                gl_FragColor.rgb = mix(gl_FragColor.rgb, applyAerialPerspective(gl_FragColor.rgb, vLeafWorld), smoothstep(130., 470., leafDist));
+                float aerialStart = mix(130., 185., uGuofengStyle);
+                float aerialEnd = mix(470., 680., uGuofengStyle);
+                gl_FragColor.rgb = mix(gl_FragColor.rgb, applyAerialPerspective(gl_FragColor.rgb, vLeafWorld), smoothstep(aerialStart, aerialEnd, leafDist));
                 #include <tonemapping_fragment>`);
         shader.fragmentShader = 'varying float vMeadowGust;\n' + shader.fragmentShader.replace(
             '#include <color_fragment>',
@@ -142,7 +164,7 @@ export function makePainterlyBarkMaterial(color: T.ColorRepresentation) {
                 vBarkWorldN = normalize(mat3(modelMatrix) * normal);
             #endif`,
         );
-        shader.fragmentShader = `${aerialPerspectiveGLSL}\nvarying vec3 vBarkLocal;varying vec3 vBarkWorld;varying vec3 vBarkWorldN;\n`
+        shader.fragmentShader = `${aerialPerspectiveGLSL}\n${valleyArtGLSL}\nvarying vec3 vBarkLocal;varying vec3 vBarkWorld;varying vec3 vBarkWorldN;\n`
             + shader.fragmentShader
                 .replace('#include <fog_fragment>', '')
                 .replace('#include <color_fragment>', `#include <color_fragment>
@@ -153,11 +175,13 @@ export function makePainterlyBarkMaterial(color: T.ColorRepresentation) {
                 float grooveB = sin(barkAngle * 27. - barkY * 1.6 + sin(barkAngle * 7. + barkY * .8) * 1.3);
                 float barkPlate = sin(barkY * 5.2 + grooveA * 1.4) * .25 + grooveA * .52 + grooveB * .23;
                 float ridge = smoothstep(-.35, .58, barkPlate);
+                float gfBark = uGuofengStyle;
                 vec3 furrowTint = mix(vec3(.62, .56, .60), vec3(1.26, 1.14, .96), ridge);
                 diffuseColor.rgb *= mix(vec3(1.), furrowTint, barkDetail * .86);
+                diffuseColor.rgb *= mix(vec3(1.), vec3(.58, .52, .46), gfBark);
                 // Soft root moss & ground bounce near the grass line.
                 float rootMoss = (1. - smoothstep(-.15, 1.35, barkY)) * (.52 + .48 * ridge);
-                diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.28, .50, .32), rootMoss * .34);`)
+                diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(.28, .50, .32), vec3(.20, .32, .20), gfBark), rootMoss * .38);`)
                 .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
                 vec3 barkN = normalize(vBarkWorldN);
                 float barkSun = smoothstep(-.45, .72, dot(barkN, normalize(uAtmoSunDir)));

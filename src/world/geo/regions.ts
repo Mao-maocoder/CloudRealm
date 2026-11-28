@@ -1,5 +1,6 @@
 import {WorldPlan} from './world-plan';
 import {peakland} from './peakland-plan';
+import {readArtStyle} from '../../config/settings';
 export interface Region {
     id: string;
     name: string;
@@ -17,7 +18,7 @@ export const mapBounds = WorldPlan.bounds;
 export const regions: Region[] = [
     { id: 'village', name: '长风乡', subtitle: '溪谷草甸 · 石拱桥', x: 80, z: 180, color: '#d9ca8f', arrival: [95, 48, 250] },
     { id: 'snow', name: '霁雪天阶', subtitle: '雪岭山道 · 双层飞瀑', x: 20, z: -1680, color: '#d3ecf5', arrival: [130, 390, -1410] },
-    { id: 'sakura', name: '绯樱台', subtitle: '樱林童话村 · 蘑菇屋与卷顶茅屋', x: 690, z: -460, color: '#efb2ce', arrival: [580, 200, -270] },
+    { id: 'sakura', name: '绯樱台', subtitle: readArtStyle() === 'guofeng' ? '樱林山居 · 飞檐木屋与落樱坡' : '樱林童话村 · 蘑菇屋与卷顶茅屋', x: 690, z: -460, color: '#efb2ce', arrival: [580, 200, -270] },
     { id: 'autumn', name: '丹枫峡', subtitle: '赤金枫林 · 山脊栈道', x: -740, z: -470, color: '#e5a460', arrival: [-650, 170, -260] },
     { id: 'bamboo', name: '听竹泽', subtitle: '竹海湿地 · 林间小径', x: -640, z: 620, color: '#9ac49b', arrival: [-560, 130, 810] },
     { id: 'lake', name: '镜潮湾', subtitle: '湖湾群岛 · 南岸草甸', x: 170, z: 1080, color: '#91d3d3', arrival: [180, 135, 1380] },

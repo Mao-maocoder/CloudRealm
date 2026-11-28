@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { daylight } from '../config/art';
+import { readArtStyle } from '../config/settings';
 
 /**
  * Unified atmospheric & material lighting uniforms shared by reference across
@@ -7,6 +8,7 @@ import { daylight } from '../config/art';
  * Updated once per frame by EnvironmentLightingController.
  */
 export const atmosphereUniforms = {
+    uGuofengStyle: { value: readArtStyle() === 'guofeng' ? 1.0 : 0.0 },
     uAtmoAir: { value: new T.Color('#448ac4') },
     uAtmoSunAir: { value: new T.Color('#b5d6e6') },
     uAtmoMist: { value: new T.Color('#cce8f7') },
@@ -36,6 +38,7 @@ export const atmosphereUniforms = {
 
 /** Analytic distance + height fog with directional sun/moon scatter. */
 export const aerialPerspectiveGLSL = `
+uniform float uGuofengStyle;
 uniform vec3 uAtmoAir;
 uniform vec3 uAtmoSunAir;
 uniform vec3 uAtmoMist;
@@ -82,9 +85,11 @@ vec3 applyAerialPerspective(vec3 color, vec3 point) {
     vec3 throughAir=mix(air,color,exp(-depth));
 
     // Smooth low-elevation valley height fog (soft dawn mist / twilight veil / moonlit valley haze).
-    float lowElev=exp(-max(0.,point.y-6.)/92.);
-    float distRamp=smoothstep(90.,580.,distanceToPoint)*(1.-exp(-distanceToPoint*.0015));
-    float hFog=clamp(lowElev*distRamp*uHeightFogDensity,0.,.52);
+    // In Guofeng mode, keep near/mid foreground crisp and concentrate mist into low river valleys & foothills.
+    float lowElev=exp(-max(0.,point.y-6.)/mix(92., 74., uGuofengStyle));
+    float distRamp=smoothstep(mix(90., 165., uGuofengStyle), mix(580., 760., uGuofengStyle), distanceToPoint)
+        *(1.-exp(-distanceToPoint*mix(.0015, .0012, uGuofengStyle)));
+    float hFog=clamp(lowElev*distRamp*uHeightFogDensity, 0., mix(.52, .42, uGuofengStyle));
     vec3 mistTint=mix(uAtmoMist,uAtmoSunAir,pow(sunward,3.)*.45);
     throughAir=mix(throughAir,mistTint,hFog);
 

@@ -6,6 +6,8 @@ import { regionalHabitatAt } from '../geo/regional-habitat';
 import { shoreDistanceAt } from '../geo/meadow-distribution';
 import { addSolid } from '../physics/solid-world';
 import { windify, type WindUniforms } from '../../rendering/foliage-wind';
+import { dilateTransparentColor } from '../flora/flora-geometry';
+import { readArtStyle } from '../../config/settings';
 import { bambooSeaRadius, type Region } from '../geo/regions';
 
 export { bambooSeaRadius };
@@ -42,18 +44,19 @@ function makeBambooLeafTexture(): T.Texture {
     ctx.quadraticCurveTo(124, 170, 130, 88);
     ctx.stroke();
 
+    const isGuofeng = readArtStyle() === 'guofeng';
     for (const [cx, cy, baseAngle, scale] of clusters) {
-        const blades = 7;
+        const blades = isGuofeng ? 9 : 7;
         for (let i = 0; i < blades; i++) {
             const spread = (i / (blades - 1) - .5) * 2.1 + (rand() - .5) * .22;
             const angle = baseAngle + spread;
             const length = (68 + rand() * 38) * scale;
-            const width = (6.5 + rand() * 3.8) * scale;
+            const width = ((isGuofeng ? 9.5 : 6.5) + rand() * (isGuofeng ? 4.8 : 3.8)) * scale;
             const curve = (rand() - .5) * 14 * scale;
             const light = .32 + (1 - cy / 256) * .42 + rand() * .26;
-            const r = Math.round(92 + 120 * light);
-            const g = Math.round(148 + 94 * light);
-            const b = Math.round(74 + 62 * light);
+            const r = Math.round(isGuofeng ? (86 + 96 * light) : (92 + 120 * light));
+            const g = Math.round(isGuofeng ? (132 + 78 * light) : (148 + 94 * light));
+            const b = Math.round(isGuofeng ? (78 + 56 * light) : (74 + 62 * light));
 
             ctx.save();
             ctx.translate(cx + (rand() - .5) * 10, cy + (rand() - .5) * 10);
@@ -77,6 +80,7 @@ function makeBambooLeafTexture(): T.Texture {
         }
     }
 
+    if (isGuofeng) dilateTransparentColor(ctx, 256, 8);
     const texture = new T.CanvasTexture(canvas);
     texture.colorSpace = T.SRGBColorSpace;
     texture.anisotropy = 4;
@@ -264,12 +268,13 @@ export function populateBambooGrove(group: T.Group, region: Region, wind: WindUn
         makeBambooVariant(14.8, 2.45, 29),
     ];
 
+    const isGuofeng = readArtStyle() === 'guofeng';
     const leafTexture = makeBambooLeafTexture();
     const culmMaterial = new T.MeshLambertMaterial({ vertexColors: true });
     const leafMaterial = new T.MeshLambertMaterial({
         map: leafTexture,
-        alphaTest: .34,
-        alphaToCoverage: true,
+        alphaTest: isGuofeng ? .32 : .34,
+        alphaToCoverage: !isGuofeng,
         vertexColors: true,
         side: T.DoubleSide,
     });
@@ -341,10 +346,10 @@ export function populateBambooGrove(group: T.Group, region: Region, wind: WindUn
     const dummy = new T.Object3D();
     const stemTint = new T.Color();
     const leafTint = new T.Color();
-    const freshLeaf = new T.Color('#b6d476');
-    const deepLeaf = new T.Color('#6ca86b');
-    const jadeStem = new T.Color('#95b874');
-    const oliveStem = new T.Color('#6c8d58');
+    const freshLeaf = new T.Color(isGuofeng ? '#8eb872' : '#b6d476');
+    const deepLeaf = new T.Color(isGuofeng ? '#4c7a5c' : '#6ca86b');
+    const jadeStem = new T.Color(isGuofeng ? '#769a68' : '#95b874');
+    const oliveStem = new T.Color(isGuofeng ? '#4d6c4e' : '#6c8d58');
 
     buckets.forEach((stalks, v) => {
         if (!stalks.length) {

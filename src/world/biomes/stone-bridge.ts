@@ -1,4 +1,7 @@
 import * as T from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { readArtStyle } from '../../config/settings';
+import { valleyArtAt } from '../geo/valley-art';
 import { heightAt, randomAt } from '../geo/height';
 import { addSolid } from '../physics/solid-world';
 
@@ -96,11 +99,89 @@ export function makeStoneBridge(
         };
     };
     const top = sample(deck), bottom = sample(arch);
-    const mortar = new T.Color(style === 'rustic' ? '#515e52' : style === 'mountain' ? '#363d44' : warmStone ? '#75685a' : '#414a53');
-    const slate = new T.Color(style === 'rustic' ? '#8c9487' : style === 'mountain' ? '#6a747e' : warmStone ? '#c3b594' : '#8392a3');
+    const isGuofengValley = readArtStyle() === 'guofeng' && style !== 'mountain';
+    const mortar = new T.Color(isGuofengValley ? '#523b2a' : style === 'rustic' ? '#515e52' : style === 'mountain' ? '#363d44' : warmStone ? '#75685a' : '#414a53');
+    const slate = new T.Color(isGuofengValley ? '#5e4532' : style === 'rustic' ? '#8c9487' : style === 'mountain' ? '#6a747e' : warmStone ? '#c3b594' : '#8392a3');
     const moss = new T.Color('#6f8556');
-    const paving = new T.Color(style === 'rustic' ? '#b8b099' : style === 'mountain' ? '#82878c' : warmStone ? '#d6c2a0' : '#93979c');
-    const cedar = new T.Color(style === 'rustic' ? '#7b5a3c' : '#834b2e'), stone = new Masonry(), timber = new Masonry();
+    const paving = new T.Color(isGuofengValley ? '#6f543d' : style === 'rustic' ? '#b8b099' : style === 'mountain' ? '#82878c' : warmStone ? '#d6c2a0' : '#93979c');
+    const cedar = new T.Color(isGuofengValley ? '#5a412e' : style === 'rustic' ? '#7b5a3c' : '#834b2e'), stone = new Masonry(), timber = new Masonry();
+    if (isGuofengValley) {
+        // Reference-matched Arched Timber Bridge adapted for wide river crossings:
+        // Mossy stone abutments at both ends + sturdy stone/timber river piers breaking long spans into balanced bays.
+        const beamDepth = length > 30 ? 1.02 : .76;
+        const abutmentCol = new T.Color('#7a7e76');
+        const abutmentDark = new T.Color('#5a605a');
+        // 1. Stone bridge abutments anchoring both bank approaches (shortens visual free-span)
+        const abutLen = Math.min(length * .14, 6.2);
+        for (const [ax0, ax1] of [[0, abutLen], [length - abutLen, length]] as const) {
+            stone.prism(ax0, ax1, -(width + .22), width + .22, () => foot - .4, x => top(x) - .10, abutmentCol);
+            stone.prism(ax0, ax1, -(width + .30), width + .30, () => foot - .4, x => Math.min(top(x) - .35, foot + 1.4), abutmentDark);
+        }
+        // 2. Twin mossy stone river piers + angled wooden knee braces for long spans (> 26m)
+        const pierFracs = length > 26 ? [0.34, 0.66] : [];
+        for (const pf of pierFracs) {
+            const px = length * pf;
+            // Solid stone river pier rising from riverbed
+            stone.prism(px - 1.15, px + 1.15, -(width + .18), width + .18, () => foot - .8, x => top(x) - beamDepth - .35, abutmentCol);
+            stone.prism(px - 1.38, px + 1.38, -(width + .32), width + .32, () => foot - .8, () => foot + 1.35, abutmentDark);
+            // Twin heavy timber knee braces fanning up from each pier into the arch beams
+            for (const side of [-1, 1]) {
+                const bz = side * (width - .14);
+                const pierTopY = top(px) - beamDepth - .55;
+                for (const dir of [-1, 1]) {
+                    const bx = px + dir * 3.2;
+                    timber.beam(new T.Vector3(px, pierTopY, bz), new T.Vector3(bx, top(bx) - .24, bz), .34, cedar);
+                }
+            }
+        }
+        // 3. Twin heavy curved timber arch beams + inner stringer
+        for (let i = 0; i < stationCount; i++) {
+            const x0 = i * step, x1 = (i + 1) * step;
+            for (const side of [-1, 1]) {
+                const z0 = side * (width - .36), z1 = side * (width + .08);
+                timber.prism(x0, x1, Math.min(z0, z1), Math.max(z0, z1), x => top(x) - beamDepth, x => top(x) - .04, cedar);
+            }
+            timber.prism(x0, x1, -.30, .30, x => top(x) - beamDepth * .72, x => top(x) - .08, mortar);
+        }
+        // 4. Transverse weathered timber deck planks with natural wood-tone variation
+        const plankCount = Math.ceil(length / .58);
+        for (let p = 0; p < plankCount; p++) {
+            const x0 = (p + .055) * length / plankCount;
+            const x1 = (p + .945) * length / plankCount;
+            const tone = .82 + randomAt(p, 7, 511) * .32;
+            timber.prism(x0, x1, -(width - .04), width - .04, x => top(x) - .14, top, paving.clone().multiplyScalar(tone));
+        }
+        // 5. Center verdigris-iron arch bracket plate + twin brass rivets on both sides
+        const ironCol = new T.Color('#526761');
+        const bronzeCol = new T.Color('#be974f');
+        const midX = length * .5;
+        for (const side of [-1, 1]) {
+            const zOut = side * (width + .11);
+            const zIn = side * (width + .03);
+            stone.prism(midX - .78, midX + .78, Math.min(zIn, zOut), Math.max(zIn, zOut), x => top(x) - beamDepth - .08, x => top(x) - .02, ironCol);
+            for (const dxR of [-.30, .30]) {
+                const rz0 = side * (width + .10), rz1 = side * (width + .16);
+                stone.prism(midX + dxR - .10, midX + dxR + .10, Math.min(rz0, rz1), Math.max(rz0, rz1), x => top(x) - beamDepth * .58, x => top(x) - beamDepth * .38, bronzeCol);
+            }
+        }
+        // 6. Curved twin wooden handrails + intermediate balusters connecting 6 pairs of carved posts
+        const postStations = length > 26 ? [0.02, 0.21, 0.40, 0.60, 0.79, 0.98] : [0.02, 0.34, 0.66, 0.98];
+        for (const side of [-1, 1]) {
+            const z = side * (halfWidth - .04);
+            for (let s = 0; s < postStations.length - 1; s++) {
+                const a = length * postStations[s], b = length * postStations[s + 1];
+                const subSegs = 4;
+                for (let k = 0; k < subSegs; k++) {
+                    const x0 = T.MathUtils.lerp(a, b, k / subSegs);
+                    const x1 = T.MathUtils.lerp(a, b, (k + 1) / subSegs);
+                    timber.beam(new T.Vector3(x0, top(x0) + 1.18, z), new T.Vector3(x1, top(x1) + 1.18, z), .17, cedar.clone().multiplyScalar(1.06));
+                    timber.beam(new T.Vector3(x0, top(x0) + .68, z), new T.Vector3(x1, top(x1) + .68, z), .13, cedar);
+                }
+                const midBal = (a + b) * .5;
+                timber.beam(new T.Vector3(midBal, top(midBal) + .04, z), new T.Vector3(midBal, top(midBal) + 1.16, z), .16, cedar);
+            }
+        }
+    } else {
     for (let i = 0; i < stationCount; i++)
         stone.prism(i*step,(i+1)*step,-width,width,bottom,x => top(x)-.085,mortar);
 
@@ -203,6 +284,7 @@ export function makeStoneBridge(
             }
         }
     }
+    }
 
     const group = new T.Group();
     group.name = 'stone-arch-bridge';
@@ -210,6 +292,26 @@ export function makeStoneBridge(
     group.rotation.y = -Math.atan2(dz, dx);
     group.add(stone.finish(.92));
     if (style !== 'mountain') group.add(timber.finish(.82));
+    if (isGuofengValley && typeof window !== 'undefined') {
+        // Attach 1 shared InstancedMesh of Blender-modeled reference-matched posts along arch
+        const postStations = length > 26 ? [0.02, 0.21, 0.40, 0.60, 0.79, 0.98] : [0.02, 0.34, 0.66, 0.98];
+        const postMatrices: T.Matrix4[] = [];
+        const dummy = new T.Object3D();
+        for (const frac of postStations) {
+            const x = length * frac;
+            const y = top(x) - .06;
+            const isEnd = frac < 0.05 || frac > 0.95;
+            const s = isEnd ? 1.24 : 1.10;
+            for (const side of [-1, 1]) {
+                dummy.position.set(x, y, side * (halfWidth - .04));
+                dummy.rotation.set(0, 0, 0);
+                dummy.scale.set(s, s, s);
+                dummy.updateMatrix();
+                postMatrices.push(dummy.matrix.clone());
+            }
+        }
+        void attachGuofengBridgePosts(group, postMatrices);
+    }
     const along = (x: number,z: number) => (x-start.x)*ux+(z-start.z)*uz;
     const across = (x: number,z: number) => -(x-start.x)*uz+(z-start.z)*ux;
     addSolid(owner, {
@@ -238,4 +340,36 @@ export function makeStoneBridge(
         underside: (x,z) => bottom(along(x,z)),
     });
     return { group, length, surface: top, underside: bottom };
+}
+
+let bridgePostGeoPromise: Promise<T.BufferGeometry | undefined> | undefined;
+function loadBridgePostGeo() {
+    if (!bridgePostGeoPromise) {
+        const loader = new GLTFLoader();
+        const url = new URL('../../../resource/architecture/guofeng_bridge_post.glb', import.meta.url).href;
+        bridgePostGeoPromise = loader.loadAsync(url).then(gltf => {
+            let geo: T.BufferGeometry | undefined;
+            gltf.scene.traverse(o => {
+                if (o instanceof T.Mesh && !geo) geo = o.geometry.clone();
+            });
+            return geo;
+        }).catch(err => {
+            console.warn('Guofeng bridge post GLB failed to load:', err);
+            return undefined;
+        });
+    }
+    return bridgePostGeoPromise;
+}
+
+async function attachGuofengBridgePosts(group: T.Group, matrices: T.Matrix4[]) {
+    const geo = await loadBridgePostGeo();
+    if (!geo || !matrices.length) return;
+    const mat = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, side: T.DoubleSide });
+    const mesh = new T.InstancedMesh(geo, mat, matrices.length);
+    mesh.name = 'guofeng-bridge-posts';
+    matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.computeBoundingSphere();
+    group.add(mesh);
 }

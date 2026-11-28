@@ -60,18 +60,18 @@ export class Water {
             fog: true,
             depthWrite: true,
             uniforms,
-            vertexShader: `attribute vec2 stream;varying vec2 vStream;attribute vec2 flow;varying vec2 vFlow;varying vec3 vWPos; varying vec3 vSurfaceNormal;
+            vertexShader: `attribute vec2 stream;varying vec2 vStream;attribute vec2 flow;varying vec2 vFlow;attribute float aRiverFade;varying float vRiverFade;varying vec3 vWPos; varying vec3 vSurfaceNormal;
                 
                 #include <fog_pars_vertex>
                 void main(){
                     vec4 world = modelMatrix * vec4(position, 1.0);
                     vSurfaceNormal=normalize(mat3(modelMatrix)*normal);
-                    vWPos = world.xyz;vFlow=flow;vStream=stream;
+                    vWPos = world.xyz;vFlow=flow;vStream=stream;vRiverFade=aRiverFade;
                     vec4 mvPosition = viewMatrix * world;
                     gl_Position = projectionMatrix * mvPosition;
                     #include <fog_vertex>
                 }`,
-            fragmentShader: `varying vec2 vStream;varying vec2 vFlow;uniform vec4 uPlayerWater;uniform vec2 uWaterDirection;varying vec3 vWPos; varying vec3 vSurfaceNormal;
+            fragmentShader: `varying vec2 vStream;varying vec2 vFlow;varying float vRiverFade;uniform vec4 uPlayerWater;uniform vec2 uWaterDirection;varying vec3 vWPos; varying vec3 vSurfaceNormal;
                 uniform float uTime;
                 uniform vec3 uSun;
                 uniform vec4 uWake[${WAKE_POINTS}];
@@ -107,7 +107,7 @@ export class Water {
                     // meander organically around coves and pebble spits instead of straight edges.
                     float shoreWarp=(wFbm(vWPos.xz*.095+vec2(4.3,9.1))-.5)*.92+(wNoise(vWPos.xz*.34+vec2(17.2,3.8))-.5)*.34;
                     float edgeDepth=rawDepth+shoreWarp*(1.-smoothstep(.45,2.5,max(0.,rawDepth)));
-                    if(edgeDepth < -.10)discard;
+                    if(edgeDepth < -.10 || vRiverFade < .01)discard;
                     float depth = clamp(edgeDepth, 0.0, 8.0);
                     float valley=valleyArtAt(vWPos.xz);
 
@@ -160,11 +160,17 @@ export class Water {
                     riverBed=mix(riverBed,shoal+caustic*vec3(.047,.057,.027),max(valley,.76));
                     vec3 transmission=exp(-depth*vec3(.95,.42,.36));
                     vec3 col=riverBed*transmission + vec3(.025,.18,.21)*(1.-transmission);
-                    vec3 valleyTransmission=exp(-depth*vec3(.76,.37,.28));
+                    float gfWater = uGuofengStyle;
+                    vec3 valleyTransmission=mix(exp(-depth*vec3(.76,.37,.28)),exp(-depth*vec3(.38,.22,.22)),gfWater);
                     vec3 deep=mix(vec3(.010,.285,.345),vec3(.018,.335,.435),bay);
                     deep=mix(deep,vec3(.046,.185,.255),alpine);
                     deep=mix(deep,vec3(.032,.127,.104),marsh*.58);
-                    vec3 jade=riverBed*valleyTransmission+deep*(1.-valleyTransmission);
+                    vec3 gfDeep=mix(vec3(.038,.128,.138),vec3(.034,.118,.148),bay*.75);
+                    gfDeep=mix(gfDeep,vec3(.036,.098,.132),alpine*.65);
+                    gfDeep=mix(gfDeep,vec3(.034,.105,.092),marsh*.60);
+                    deep=mix(deep,gfDeep,gfWater*.92);
+                    vec3 clearBed=mix(riverBed,shoal*1.12+caustic*vec3(.095,.092,.068),gfWater*.75);
+                    vec3 jade=clearBed*valleyTransmission+deep*(1.-valleyTransmission);
                     col=mix(col,jade,max(valley,.76));
                     float shallowsTint=bay*smoothstep(.04,.52,depth)*(1.-smoothstep(1.7,3.3,depth));
                     float sandGrain=wNoise(q*.072+flowWarp*.66);
@@ -181,18 +187,19 @@ export class Water {
                     vec3 refl = reflect(-eye, n);
                     vec3 skyRef = mix(uWaterSkyLow, uWaterSkyHigh, smoothstep(-.01, .24, refl.y));
                     skyRef = mix(skyRef, vec3(.12, .20, .16) * uWaterBodyTint, 1. - smoothstep(.18, 2.0, depth));
-                    vec3 valleySky = mix(uWaterSkyLow * .86, uWaterSkyHigh * .88, smoothstep(-.02, .35, refl.y));
+                    vec3 valleySky = mix(uWaterSkyLow * .90, uWaterSkyHigh * .92, smoothstep(-.02, .35, refl.y));
                     float softReflection = max(valley, bay * .92);
-                    col = mix(col, mix(skyRef, valleySky, softReflection), fres * mix(.86, .72, softReflection));
-                    float bridgeWater=1.-smoothstep(.54,1.,length((q-vec2(${bridgePool.x},${bridgePool.z}.))/vec2(44.,73.)));
+                    float reflWeight = fres * mix(.86, mix(.72, .68, gfWater), softReflection);
+                    col = mix(col, mix(skyRef, valleySky, softReflection), reflWeight);
+                    float bridgeWater=1.-smoothstep(.20,1.,length((q-vec2(${bridgePool.x},${bridgePool.z}.))/vec2(44.,73.)));
                     if(uBridgeMirrorOn>.5 && bridgeWater>.001) {
                         vec4 mirrored=uBridgeMirrorMatrix*vec4(vWPos,1.);
                         vec2 uv=mirrored.xy/max(.0001,mirrored.w)+worldSlope*vec2(.055,.085);
                         vec2 border=min(uv,1.-uv);
                         float valid=smoothstep(.004,.065,min(border.x,border.y))*step(.001,mirrored.w);
                         vec3 reflected=texture2D(uBridgeReflection,clamp(uv,0.,1.)).rgb;
-                        float strength=bridgeWater*valid*(.20+.77*fres)*smoothstep(.12,1.12,depth);
-                        col=mix(col,reflected*vec3(.83,.99,.95),strength);
+                        float strength=bridgeWater*valid*(mix(.20,.10,gfWater)+mix(.77,.58,gfWater)*fres)*smoothstep(.12,1.12,depth);
+                        col=mix(col,reflected*mix(vec3(.83,.99,.95),vec3(.90,.93,.91),gfWater),strength);
                     }
                     vec3 lightDir = normalize(uAtmoSunDir);
                     vec3 halfV = normalize(lightDir + eye);
@@ -223,7 +230,7 @@ export class Water {
                     foam=max(foam,shallows*smoothstep(.66,.86,shoalBreak)*foamGrain*.39);
                     float foamThread=wNoise((advected+flowWarp)*vec2(.29,.078));
                     float brokenCurrent=smoothstep(.57,.82,shoalBreak)*smoothstep(.54,.73,foamThread);
-                    foam=max(foam,(1.-bay*.92)*brokenCurrent*(.43+.35*shallows));
+                    foam=max(foam,(1.-bay*.92)*brokenCurrent*(.43+.35*shallows)*mix(1.,.22,gfWater));
                     // Flow-aligned ribbons split into thin fingers behind shallow shelves.
                     float snowReach=(1.-smoothstep(-390.,120.,q.y))*smoothstep(-1760.,-1540.,q.y);
                     float lace=wNoise(vec2(advected.x*.24+flowWarp.x*.42,advected.y*.105));
@@ -272,10 +279,10 @@ export class Water {
                         col += uSpellLightCol[s].rgb * spStrength * spAtten * (spDiff + spSpec * (0.45 + 0.55 * fres));
                     }
 
-                    float alpha = mix(.27, .98, max(fres*mix(.8,.64,valley),smoothstep(0.0, mix(3.,3.6,valley), depth)));
-                    alpha = max(alpha, max(foam, wake) * 0.55);
+                    float alpha = mix(mix(.27, .12, gfWater), mix(.98, .88, gfWater), max(fres*mix(.8,mix(.64,.52,gfWater),valley),smoothstep(0.0, mix(3.,mix(3.6,5.2,gfWater),valley), depth)));
+                    alpha = max(alpha, max(foam, wake) * mix(0.55, 0.38, gfWater));
                     float shoreAA=max(.10,fwidth(edgeDepth));
-                    alpha*=smoothstep(-shoreAA,shoreAA*1.4,edgeDepth);
+                    alpha*=smoothstep(-shoreAA,shoreAA*1.4,edgeDepth)*vRiverFade;
                     col=mix(col,applyAerialPerspective(col,vWPos),smoothstep(130.,480.,distance(cameraPosition.xz,q)));
                     gl_FragColor = vec4(col, alpha);
                     #include <tonemapping_fragment>

@@ -1,6 +1,7 @@
 // Adapted cloud density/lighting shader from Petalwake, Copyright (c) 2026 Jacob Miller, MIT.
 // See public/PETALWAKE_LICENSE.txt. Runtime integration is specific to Yunjing.
 import * as T from 'three';
+import { readArtStyle } from '../config/settings';
 const atmosphere = `
 uniform vec3 uSunDir;
 uniform vec3 uSunColor;
@@ -8,7 +9,10 @@ uniform vec3 uAmbGround;
 vec3 skyBase(vec3 d){return mix(vec3(.60,.80,.82),vec3(.16,.43,.71),smoothstep(0.,.4,d.y));}
 `;
 export class CloudBake {
- readonly target=new T.WebGLRenderTarget(512,128,{type:T.HalfFloatType,depthBuffer:false});
+ private readonly isGuofeng = readArtStyle() === 'guofeng';
+ private readonly bakeW = this.isGuofeng ? 768 : 512;
+ private readonly bakeH = this.isGuofeng ? 192 : 128;
+ readonly target=new T.WebGLRenderTarget(this.bakeW,this.bakeH,{type:T.HalfFloatType,depthBuffer:false,minFilter:T.LinearFilter,magFilter:T.LinearFilter});
  private scene=new T.Scene();
  private camera=new T.OrthographicCamera(-1,1,1,-1,0,1);
  private material:T.ShaderMaterial;
@@ -16,7 +20,7 @@ export class CloudBake {
  private cursor=0;
  constructor(sun:T.Vector3){
  this.geometry.setAttribute('position',new T.Float32BufferAttribute([-1,-1,0,3,-1,0,-1,3,0],3));
- this.material=new T.ShaderMaterial({uniforms:{uJitter:{value:.5},uWeight:{value:1},uSeed:{value:new T.Vector3(13.7,4.1,91.3)},uCoverage:{value:.56},uSunDir:{value:sun},uSunColor:{value:new T.Vector3(1,.94,.84)},uAmbGround:{value:new T.Vector3(.23,.28,.20)}},vertexShader:'varying vec2 vUv;void main(){vUv=position.xy*.5+.5;gl_Position=vec4(position.xy,0.,1.);}',fragmentShader:CLOUD_FRAG,depthTest:false,depthWrite:false});
+ this.material=new T.ShaderMaterial({uniforms:{uJitter:{value:.5},uWeight:{value:1},uSeed:{value:new T.Vector3(13.7,4.1,91.3)},uCoverage:{value:this.isGuofeng ? .50 : .56},uSoftCloud:{value:this.isGuofeng ? 1.0 : 0.0},uSunDir:{value:sun},uSunColor:{value:new T.Vector3(1,.94,.84)},uAmbGround:{value:new T.Vector3(.23,.28,.20)}},vertexShader:'varying vec2 vUv;void main(){vUv=position.xy*.5+.5;gl_Position=vec4(position.xy,0.,1.);}',fragmentShader:CLOUD_FRAG,depthTest:false,depthWrite:false});
  const mesh=new T.Mesh(this.geometry,this.material);mesh.frustumCulled=false;this.scene.add(mesh);
  this.target.texture.wrapS=T.RepeatWrapping;
  }
@@ -24,7 +28,8 @@ export class CloudBake {
  step(renderer:T.WebGLRenderer){
  if(this.cursor>=16)return true;
  const previous=renderer.getRenderTarget(),auto=renderer.autoClear;
- renderer.autoClear=false;this.target.scissorTest=true;this.target.scissor.set(0,this.cursor*8,512,8);
+ const stripH = this.bakeH / 16;
+ renderer.autoClear=false;this.target.scissorTest=true;this.target.scissor.set(0,this.cursor*stripH,this.bakeW,stripH);
  renderer.setRenderTarget(this.target);renderer.render(this.scene,this.camera);renderer.setRenderTarget(previous);renderer.autoClear=auto;
  this.cursor++;return this.cursor>=16;
  }
@@ -37,6 +42,7 @@ uniform float uJitter;
 uniform float uWeight;
 uniform vec3 uSeed;
 uniform float uCoverage;
+uniform float uSoftCloud;
 ${atmosphere}
 
 const float RP = 520000.0;                 // a small planet pulls the cloud deck down to the horizon
@@ -98,7 +104,10 @@ float density(vec3 p, float alt, int lod){
   if (base <= 0.0) return 0.0;
   if (lod == 0){
     float det = worley(q * 5.3 + 2.0) * 0.6 + vn3(q * 11.0) * 0.4;
-    base = rm(base, det * 0.46, 1.0);
+    float eroded = rm(base, det * 0.46, 1.0);
+    // Soft feathered smoothstep erosion removes stepped/blocky cloud silhouettes in Guofeng mode.
+    float softEroded = smoothstep(det * 0.34, 0.94, base) * (0.86 + 0.14 * vn3(q * 7.5));
+    base = mix(eroded, softEroded, uSoftCloud);
   }
   // denser toward the top where the updraft condenses
   return base * mix(0.75, 1.25, hf);
@@ -132,7 +141,7 @@ void main(){
   float t1 = shell(ro - C, rd, RP + H1).y;
   if (t0 > 0.0 && t1 > t0){
     t1 = min(t1, t0 + 46000.0);
-    const int STEPS = 32;
+    const int STEPS = 44;
     float dt = (t1 - t0) / float(STEPS);
     float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uJitter);
     float t = t0 + dt * n;

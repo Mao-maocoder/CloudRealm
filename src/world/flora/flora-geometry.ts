@@ -98,8 +98,64 @@ const valleyTrees = [
 ] as const;
 export const valleyTreeCount = valleyTrees.length;
 
+/**
+ * Color-bleed (dilation) pass for alpha-cutout canvas textures:
+ * fills transparent (alpha=0) pixels with the RGB of neighbouring opaque leaf pixels
+ * so bilinear filtering and mipmaps never bleed black halos into foliage edges.
+ */
+export function dilateTransparentColor(ctx: CanvasRenderingContext2D, size: number, passes = 6) {
+    const img = ctx.getImageData(0, 0, size, size);
+    const data = img.data;
+    const filled = new Uint8Array(size * size);
+    for (let i = 0; i < size * size; i++) {
+        if (data[i * 4 + 3] > 20) filled[i] = 1;
+    }
+    const nextFilled = new Uint8Array(filled);
+    const dirs = [-1, 1, -size, size, -size - 1, -size + 1, size - 1, size + 1];
+    for (let pass = 0; pass < passes; pass++) {
+        let changed = false;
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const idx = y * size + x;
+                if (filled[idx]) continue;
+                let r = 0, g = 0, b = 0, count = 0;
+                for (let d = 0; d < 8; d++) {
+                    const nIdx = idx + dirs[d];
+                    if (nIdx < 0 || nIdx >= size * size) continue;
+                    const nx = nIdx % size;
+                    if (Math.abs(nx - x) > 1) continue;
+                    if (filled[nIdx]) {
+                        r += data[nIdx * 4];
+                        g += data[nIdx * 4 + 1];
+                        b += data[nIdx * 4 + 2];
+                        count++;
+                    }
+                }
+                if (count > 0) {
+                    data[idx * 4] = Math.round(r / count);
+                    data[idx * 4 + 1] = Math.round(g / count);
+                    data[idx * 4 + 2] = Math.round(b / count);
+                    nextFilled[idx] = 1;
+                    changed = true;
+                }
+            }
+        }
+        filled.set(nextFilled);
+        if (!changed) break;
+    }
+    // Fill any remaining far transparent corners with average mid-leaf green so deep mips stay green.
+    for (let i = 0; i < size * size; i++) {
+        if (!filled[i]) {
+            data[i * 4] = 148;
+            data[i * 4 + 1] = 172;
+            data[i * 4 + 2] = 132;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+}
+
 // One shared cutout of a painterly leafy spray. Soft overlapping brushstrokes retain airy skylights.
-export function makeLeafTexture(blossom = false): T.Texture {
+export function makeLeafTexture(blossom = false, guofeng = false): T.Texture {
     if (typeof document === 'undefined') {
         const data = new Uint8Array([165, 206, 152, 255]);
         const fallback = new T.DataTexture(data, 1, 1, T.RGBAFormat);
@@ -109,8 +165,48 @@ export function makeLeafTexture(blossom = false): T.Texture {
     const canvas=document.createElement('canvas');
     canvas.width=canvas.height=256;
     const ctx=canvas.getContext('2d')!;
-    let state=5819;
+    let state=guofeng ? 7919 : 5819;
     const random=()=>((state=Math.imul(state,1664525)+1013904223>>>0)/4294967296);
+    if (guofeng && !blossom) {
+        // Cohesive stylized-realistic Eastern foliage cluster:
+        // solid organic inner leaf mass (prevents subpixel Swiss-cheese & mipmap collapse)
+        // surrounded by layered pointed painterly leaf tips with balanced matte luminance (no white hotspots).
+        for (let i = 0; i < 24; i++) {
+            const angle = i * 2.39996 + (random() - .5) * .35;
+            const radius = Math.sqrt(random()) * 58;
+            const cx = 128 + Math.cos(angle) * radius * 1.06;
+            const cy = 128 + Math.sin(angle) * radius * .88;
+            const shade = .82 + (1 - cy / 256) * .18;
+            ctx.fillStyle = `rgb(${Math.round(118 * shade)},${Math.round(146 * shade)},${Math.round(108 * shade)})`;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, 24 + random() * 14, 17 + random() * 11, angle, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Layered individual leaf strokes across the cluster & scalloped outer rim
+        for (let i = 0; i < 52; i++) {
+            const angle = i * 2.39996 + (random() - .5) * .42;
+            const radius = Math.sqrt((i + .5) / 52) * 92;
+            const cx = 128 + Math.cos(angle) * radius * 1.04;
+            const cy = 128 + Math.sin(angle) * radius * .88;
+            const light = random() * .26 + (1 - cy / 256) * .44;
+            for (let j = 0; j < 7; j++) {
+                const a = angle + (random() - .5) * 1.45;
+                const r = 4 + Math.sqrt(random()) * 20;
+                const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+                const v = Math.min(1, light + random() * .24);
+                // Capped below 218 so leaf tips stay rich matte foliage (never white speckles at night)
+                ctx.fillStyle = `rgb(${Math.round(132 + 66 * v)},${Math.round(158 + 56 * v)},${Math.round(118 + 50 * v)})`;
+                ctx.beginPath();
+                ctx.ellipse(x, y, 10.5 + random() * 8.5, 4.6 + random() * 3.8, a, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        dilateTransparentColor(ctx, 256, 8);
+        const texture = new T.CanvasTexture(canvas);
+        texture.colorSpace = T.SRGBColorSpace;
+        texture.anisotropy = 4;
+        return texture;
+    }
     for(let i=0;i<44;i++){
         const angle=i*2.39996, radius=Math.sqrt(random())*92;
         const cx=128+Math.cos(angle)*radius, cy=130+Math.sin(angle)*radius*.90;
@@ -210,41 +306,60 @@ export function makeBridgeTree(width: number, height: number, spreading: boolean
     leaves.forEach(leaf=>leaf.dispose());
     return { trunk: combine(bark), canopy };
 }
-export function makeValleyTree(type: number, detail: boolean) {
+export function makeValleyTree(type: number, detail: boolean, guofeng = false) {
     const profile=valleyTrees[type], {height,width,radius,lean,rise,crown,spread,arms}=profile;
-    const stem=[new T.Vector3(0,-.24,0),new T.Vector3(-lean*.16,height*.25,.10),
-        new T.Vector3(lean*.45,height*.66,-.17),new T.Vector3(lean,height,0)];
+    const bendScale = guofeng ? 1.38 : 1.0;
+    const stem=[
+        new T.Vector3(0,-.24,0),
+        new T.Vector3(-lean*.22*bendScale,height*.24,.16*bendScale),
+        new T.Vector3(lean*.52*bendScale,height*.64,-.22*bendScale),
+        new T.Vector3(lean*bendScale,height,guofeng ? (type % 2 ? .35 : -.28) : 0),
+    ];
     const trunk=new T.CatmullRomCurve3(stem);
-    const bark=[branch(stem,radius,.043,detail?10:4,detail?8:5)], foliage: T.BufferGeometry[]=[];
+    const bark=[branch(stem,radius*(guofeng ? 1.06 : 1),.038,detail?10:4,detail?8:5)], foliage: T.BufferGeometry[]=[];
     function tuft(p: T.Vector3, size: number, seed: number, shade: number) {
-        foliage.push(leafSprays(p,size,seed,detail,shade));
+        foliage.push(leafSprays(p,size,seed,detail,shade,guofeng));
     }
-    if(detail)for(let i=0;i<4;i++){
-        const a=i*2.43;
-        bark.push(branch([new T.Vector3(0,.58,0),new T.Vector3(Math.cos(a)*radius,.14,Math.sin(a)*radius),
-            new T.Vector3(Math.cos(a)*radius*2.05,-.18,Math.sin(a)*radius*2.05)],radius*.39,.021,3,5));
+    if(detail)for(let i=0;i<(guofeng ? 5 : 4);i++){
+        const a=i*(guofeng ? 1.257 : 2.43)+type*.4;
+        bark.push(branch([new T.Vector3(0,.62,0),new T.Vector3(Math.cos(a)*radius*1.08,.15,Math.sin(a)*radius*1.08),
+            new T.Vector3(Math.cos(a)*radius*2.25,-.20,Math.sin(a)*radius*2.25)],radius*.41,.021,3,5));
     }
     for(let i=0;i<arms;i++){
-        const a=i*2.399+type*.56, side=Math.cos(a);
-        const progress=(i+.6)/arms, start=trunk.getPoint(.31+progress*.48);
-        const reach=width*(.56+.43*Math.sin((progress*.71+.20)*Math.PI))*(spread+(1-spread)*side);
-        const end=new T.Vector3(side*reach+lean*.57,height*(rise+.25*progress),Math.sin(a)*reach*.83);
-        const elbow=start.clone().lerp(end,.55).add(new T.Vector3(0,-height*.048,0));
-        bark.push(branch([start,elbow,end],radius*(.42-.19*progress),.022,detail?5:2,detail?6:4));
-        const size=crown*(1.09+.21*Math.sin(i*5.1));
-        tuft(end,size,i+type*11,1);
+        const a=i*2.399+type*.56+(guofeng ? Math.sin(i*3.7)*.28 : 0), side=Math.cos(a);
+        const progress=(i+.6)/arms, start=trunk.getPoint(.28+progress*.50);
+        const reach=width*(guofeng ? .64 : .56)*(1+(guofeng ? .52 : .43)*Math.sin((progress*.71+.20)*Math.PI))*(spread+(1-spread)*side);
+        const end=new T.Vector3(side*reach+lean*.57,height*(rise+.26*progress)+(guofeng ? Math.sin(i*4.3)*.65 : 0),Math.sin(a)*reach*.86);
+        const elbow=start.clone().lerp(end,.52).add(new T.Vector3(0,-height*(guofeng ? .075 : .048),0));
+        bark.push(branch([start,elbow,end],radius*(.43-.19*progress),.020,detail?5:2,detail?6:4));
+        const size=crown*(guofeng ? .88 : 1.09)*(1+.24*Math.sin(i*5.1));
+        tuft(end,size,i+type*11,guofeng ? .86 + progress * .18 : 1);
         if(detail){
-            const fork=end.clone().add(new T.Vector3(Math.cos(a+.96)*size*.92,size*(type===4?-.28:.48),Math.sin(a+.96)*size*.88));
+            const fork=end.clone().add(new T.Vector3(Math.cos(a+.96)*size*(guofeng ? 1.15 : .92),size*(type===4?-.28:.42),Math.sin(a+.96)*size*(guofeng ? 1.10 : .88)));
             bark.push(branch([elbow.clone().lerp(end,.36),end.clone().lerp(fork,.32),fork],radius*.13,.012,3,5));
-            tuft(fork,size*.67,i+type*13+19,.91);
+            tuft(fork,size*(guofeng ? .74 : .67),i+type*13+19,guofeng ? .94 : .91);
+            if(guofeng && i % 2 === 0){
+                // Secondary asymmetrical satellite pad to break spherical silhouette and leave natural sky gaps.
+                const sub=end.clone().add(new T.Vector3(Math.cos(a-.85)*size*1.02,size*.24,Math.sin(a-.85)*size*.96));
+                tuft(sub,size*.58,i+type*17+41,.76);
+            }
         }
     }
-    tuft(stem.at(-1)!,crown*(type===0?1.25:.98),type+21,1.05);
+    tuft(stem.at(-1)!,crown*(type===0?(guofeng ? 1.02 : 1.25):(guofeng ? .84 : .98)),type+21,1.04);
+    if (guofeng) {
+        const canopy = mergeGeometries(foliage)!;
+        foliage.forEach(f => f.dispose());
+        return {trunk:combine(bark),canopy};
+    }
     return {trunk:combine(bark),canopy:combine(foliage)};
 }
 
-export function makeValleyShrub() {
-    const shoots = [
+export function makeValleyShrub(guofeng = false) {
+    const shoots = guofeng ? [
+        [-.74,.20,.28,.40,.66], [-.12,.58,.08,.48,.96], [.68,.24,.24,.38,.78],
+        [-.42,.42,-.44,.42,.88], [.44,.36,-.48,.34,.82], [.14,.18,.62,.32,.70],
+        [-.56,.34,-.08,.36,.74], [.52,.50,.06,.38,.94], [.02,.28,-.12,.34,.58],
+    ] : [
         [-.64,.28,.24,.46,.82], [.02,.56,.06,.56,1.04], [.58,.30,.26,.44,.94],
         [-.32,.46,-.36,.46,1.06], [.38,.40,-.40,.38,.96], [.08,.24,.58,.36,.86],
         [-.52,.36,-.12,.38,.90], [.44,.48,.02,.42,1.02],

@@ -88,22 +88,29 @@ vec4 cascadeCliff(vec3 p,vec3 up,float slope,float footprint) {
     vec4 grain=rockTriplanar(p,up,.29);
 
     // --- colour -------------------------------------------------------------
-    vec3 cream=vec3(.77,.67,.51), sand=vec3(.67,.56,.41);
-    vec3 warmGrey=vec3(.57,.54,.48), greyBrown=vec3(.45,.38,.30), shade=vec3(.29,.30,.31);
+    vec3 cream=mix(vec3(.77,.67,.51),vec3(.56,.54,.49),uGuofengStyle);
+    vec3 sand=mix(vec3(.67,.56,.41),vec3(.45,.46,.46),uGuofengStyle);
+    vec3 warmGrey=mix(vec3(.57,.54,.48),vec3(.38,.42,.45),uGuofengStyle);
+    vec3 greyBrown=mix(vec3(.45,.38,.30),vec3(.28,.32,.36),uGuofengStyle);
+    vec3 shade=mix(vec3(.29,.30,.31),vec3(.16,.20,.24),uGuofengStyle);
     vec3 rock=mix(greyBrown,sand,smoothstep(.26,.70,macro));
     rock=mix(rock,cream,bedTop*smoothstep(.35,.75,macro*.5+blocks*.5)*.80);
     rock=mix(rock,warmGrey,smoothstep(.50,.80,blocks)*.50);
     rock*=.88+.22*mottle+.10*(blocks-.5);
     rock*=mix(1.,mix(.92,1.07,grain.r)*(1.-.10*grain.g),fineFade);
-    rock*=1.-.20*bedLine;
+    rock*=1.-.22*bedLine;
     rock=mix(rock,shade*.85,.20*runoff);
-    rock=mix(rock,shade*.55,crack*.62+hairline*.30);
+    rock=mix(rock,shade*.55,crack*.58+hairline*.28);
 
     // Grass only takes hold on gentle ledges.
     float plantable=(1.-smoothstep(.18,.525,slope))*(1.-smoothstep(770.,920.,p.y));
     float growth=ccFbm2(p*.025+warp*1.2+6.6);
     float sod=plantable*smoothstep(.40,.72,growth*.62+bedTop*.38);
-    vec3 grass=mix(vec3(.126,.245,.057),vec3(.30,.419,.096),mottle);
+    vec3 grass=mix(
+        mix(vec3(.126,.245,.057),vec3(.30,.419,.096),mottle),
+        mix(vec3(.135,.215,.120),vec3(.265,.335,.165),mottle),
+        uGuofengStyle
+    );
     rock=mix(rock,grass,sod);
 
     float relief=(macro-.5)*2.4+(blocks-.5)*1.5+bedTop*.80

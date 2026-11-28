@@ -2,6 +2,7 @@ import * as T from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { bridgeArtEnabled, bridgePool, bridgeReflectionLayer } from '../world/geo/bridge-look';
 import { waterLevelAt } from '../world/geo/geo-core';
+import { atmosphereUniforms } from '../rendering/aerial-perspective';
 
 /** A single low-resolution, clipped reflection pass for the main stone bridge. */
 export class BridgeReflection {
@@ -61,6 +62,7 @@ export class BridgeReflection {
         this.lastCamDir.copy(this.curCamDir);
 
         const background = this.scene.background;
+        this.skyColor.copy(atmosphereUniforms.uWaterSkyLow.value);
         this.scene.background = this.skyColor;
         const material = this.mirror.material as T.ShaderMaterial;
         this.mirror.onBeforeRender(renderer,this.scene,camera,this.mirror.geometry,material,this.reflectionGroup);

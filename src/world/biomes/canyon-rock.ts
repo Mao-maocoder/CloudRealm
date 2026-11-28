@@ -29,10 +29,11 @@ function rimRow(rim:CanyonRim,z:number):Point[] {
     const {toe,rim:crest,relief}=rimAt(rim,z);
     const base=heightAt(rim.side*toe,z)-7;
     const profile=rim.side<0?west:east;
-    const joint=10*Math.sin(z*.085+rim.side)+5*Math.sin(z*.193);
-    const ribs=19*Math.sin(z*.027+rim.side*.9)+12*Math.cos(z*.046);
+    const joint=5.5*Math.sin(z*.051+rim.side*1.3)+3.2*Math.sin(z*.117+rim.side*2.7)+2.4*Math.cos(z*.031);
+    const ribs=11*Math.sin(z*.019+rim.side*.9)+8*Math.cos(z*.037-rim.side*1.4);
     return profile.map(([run,rise,sod],i)=>{
-        const outline=(joint*(1-sod)*.78+ribs*Math.sin(rise*4.87+.35))*ramp(0,.4,run)*(1-ramp(1.4,2.3,run));
+        const verticalBreak=Math.sin(rise*3.1+z*.014)*.65+Math.cos(rise*5.4-z*.021)*.35;
+        const outline=(joint*(1-sod)*.62+ribs*verticalBreak)*ramp(0,.4,run)*(1-ramp(1.4,2.3,run));
         const x=rim.side*(toe+(crest-toe)*run+outline), ground=heightAt(x,z)-8;
         const top=base+relief*rise+16*Math.sin(z*.018+run*.7)*Math.min(rise,.4);
         const join=Math.max(1-ramp(0,.25,rise),ramp(3.18,4.91,run));

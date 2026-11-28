@@ -52,10 +52,10 @@ export function makeCanyonStone() {
                 return texture2D(uCanyonGrain,p.zy*scale)*w.x+
                     texture2D(uCanyonGrain,p.xz*scale)*w.y+texture2D(uCanyonGrain,p.xy*scale)*w.z;
             }
+            ${aerialPerspectiveGLSL}
             ${cascadeCliffGLSL}
             ${grassCanopyGLSL}
             ${meadowWindGLSL}
-            ${aerialPerspectiveGLSL}
         `+shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
             vec3 p=vCanyonPoint, n=normalize(vCanyonNormal);
             vec2 worldUV=p.xz;

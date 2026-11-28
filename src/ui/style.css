@@ -1223,6 +1223,67 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--gold); out
 .panel label { display: flex; justify-content: space-between; align-items: center; margin: 14px 0; color: #e6f0e8; }
 .panel select { background: #1e4b52; border: 1px solid var(--gold-soft); border-radius: 6px; padding: 5px 8px; }
 .panel p { font-size: 10.5px; line-height: 1.7; opacity: .72; margin: 12px 0 0; }
+.style-modal-backdrop {
+  pointer-events: auto;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 16, 22, .68);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.style-modal-backdrop.hidden { display: none; }
+.style-modal-card {
+  width: min(360px, calc(100vw - 32px));
+  padding: 20px 22px 18px;
+  border-radius: 12px;
+  background: rgba(14, 41, 47, .96);
+  border: 1px solid var(--gold-soft);
+  box-shadow: 0 20px 50px rgba(4, 14, 20, .72);
+  color: #e6f0e8;
+}
+.style-modal-card h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  color: var(--gold);
+}
+.style-modal-card p {
+  margin: 0 0 18px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: rgba(230, 240, 232, .88);
+}
+.style-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.style-modal-actions button {
+  padding: 7px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .12s;
+}
+.style-btn-cancel {
+  background: rgba(20, 56, 64, .75);
+  border: 1px solid rgba(235, 211, 151, .28);
+  color: #cfe0d8;
+}
+.style-btn-cancel:hover { background: rgba(30, 74, 84, .92); }
+.style-btn-confirm {
+  background: linear-gradient(180deg, rgba(212, 178, 106, .92), rgba(168, 134, 68, .92));
+  border: 1px solid rgba(255, 236, 186, .75);
+  color: #102428;
+  font-weight: 600;
+}
+.style-btn-confirm:hover { filter: brightness(1.08); }
 .time-control {
   margin: 10px 0 14px;
   padding: 10px 12px;

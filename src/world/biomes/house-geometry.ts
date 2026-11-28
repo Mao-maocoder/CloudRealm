@@ -1,5 +1,7 @@
 import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { aerialPerspectiveGLSL, atmosphereUniforms } from '../../rendering/aerial-perspective';
+import { valleyArtGLSL } from '../geo/valley-art';
 
 type Point = [number, number, number];
 export type Surface = 'wood' | 'stone' | 'plaster' | 'tile' | 'glass';
@@ -77,14 +79,18 @@ export class HouseGeometry {
 
 export function makeHouseMaterial(detailScale = 1) {
     const material = new T.MeshStandardMaterial({ vertexColors:true, roughness:.89, metalness:0, side:T.DoubleSide });
-    material.customProgramCacheKey = () => `house-painted-material-v2:${detailScale}`;
+    material.customProgramCacheKey = () => `house-painted-material-v3:${detailScale}`;
     material.onBeforeCompile = shader => {
         shader.uniforms.uHouseDetailScale = { value: detailScale };
-        shader.vertexShader = 'attribute float houseSurface; varying vec4 vHouse;\n' + shader.vertexShader
-            .replace('#include <begin_vertex>','#include <begin_vertex>\nvHouse=vec4(position,houseSurface);');
+        Object.assign(shader.uniforms, atmosphereUniforms);
+        shader.vertexShader = 'attribute float houseSurface; varying vec4 vHouse; varying vec3 vHouseWorld;\n' + shader.vertexShader
+            .replace('#include <begin_vertex>','#include <begin_vertex>\nvHouse=vec4(position,houseSurface);\nvHouseWorld=(modelMatrix*vec4(transformed,1.0)).xyz;');
         shader.fragmentShader = `
             varying vec4 vHouse;
+            varying vec3 vHouseWorld;
             uniform float uHouseDetailScale;
+            ${aerialPerspectiveGLSL}
+            ${valleyArtGLSL}
             float houseHash(vec2 p){
                 return fract(sin(dot(p,vec2(121.7,311.9)))*43758.5453);
             }
@@ -94,7 +100,9 @@ export function makeHouseMaterial(detailScale = 1) {
                 return mix(mix(houseHash(i),houseHash(i+vec2(1.,0.)),f.x),
                     mix(houseHash(i+vec2(0.,1.)),houseHash(i+1.),f.x),f.y);
             }
-        ` + shader.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+        ` + shader.fragmentShader
+            .replace('#include <fog_fragment>', '')
+            .replace('#include <color_fragment>',`#include <color_fragment>
             {
                 vec3 p=vHouse.xyz*uHouseDetailScale;
                 vec2 q=vec2(p.x+p.z,p.y+.19*p.z);
@@ -102,12 +110,36 @@ export function makeHouseMaterial(detailScale = 1) {
                 float grain=houseNoise(q*vec2(96.,15.));
                 float detail=1.-smoothstep(.02,.07,max(length(dFdx(q)),length(dFdy(q))));
                 float wood=1.-step(.5,vHouse.w);
+                float stone=step(.5,vHouse.w)*(1.-step(1.5,vHouse.w));
+                float plaster=step(1.5,vHouse.w)*(1.-step(2.5,vHouse.w));
+                float tile=step(2.5,vHouse.w)*(1.-step(3.5,vHouse.w));
                 float mineral=step(.5,vHouse.w)*(1.-step(2.5,vHouse.w));
                 float dirt=1.-smoothstep(.025,.28,p.y);
                 diffuseColor.rgb*=.88+.24*weathering+.12*detail*(grain-.5)+.19*wood*detail*(grain-.5);
                 diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.68,.77,.66),dirt*mineral*.29);
+                // Eastern ancient village palette & stronger foundation contact AO across all regions in Guofeng mode.
+                float gfHouse=uGuofengStyle;
+                if(gfHouse>.001){
+                    vec3 qingWa=mix(vec3(.20,.25,.29),vec3(.31,.36,.40),weathering);
+                    vec3 oldWood=diffuseColor.rgb*vec3(.64,.56,.50);
+                    vec3 ashPlaster=mix(diffuseColor.rgb,vec3(.76,.74,.68)*(.90+.16*weathering),.55);
+                    vec3 mossStone=mix(diffuseColor.rgb,vec3(.42,.44,.41)*(.86+.24*weathering),.50);
+                    vec3 gfCol=diffuseColor.rgb;
+                    gfCol=mix(gfCol,qingWa,tile*.82);
+                    gfCol=mix(gfCol,oldWood,wood*.78);
+                    gfCol=mix(gfCol,ashPlaster,plaster*.75);
+                    gfCol=mix(gfCol,mossStone,stone*.65);
+                    float baseAO=1.-smoothstep(.0,.42,p.y);
+                    gfCol*=mix(1.,.58,baseAO*.68);
+                    gfCol=mix(gfCol,vec3(.22,.28,.20),baseAO*stone*.34);
+                    diffuseColor.rgb=mix(diffuseColor.rgb,gfCol,gfHouse);
+                }
             }
-        `);
+        `)
+            .replace('#include <tonemapping_fragment>', `
+            float houseDist = length(cameraPosition - vHouseWorld);
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, applyAerialPerspective(gl_FragColor.rgb, vHouseWorld), smoothstep(130., 470., houseDist));
+            #include <tonemapping_fragment>`);
     };
     return material;
 }

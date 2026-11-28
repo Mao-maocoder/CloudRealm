@@ -2,6 +2,7 @@ import {CloudBake} from './cloud-bake';
 import {makeCloudField,panoramaGLSL} from './sky-panorama';
 import {makeDistantMountains} from './distant-mountains';
 import {daylight} from '../config/art';
+import {readArtStyle} from '../config/settings';
 import type {DayNightState} from './day-night';
 import * as T from 'three';
 
@@ -9,6 +10,8 @@ import * as T from 'three';
 export class Sky {
     readonly mesh: T.Mesh;
     private cloudBake: CloudBake;
+    private panoTexture?: T.Texture;
+    private readonly isGuofeng = readArtStyle() === 'guofeng';
     readonly sunDirection = new T.Vector3(...daylight).normalize();
     readonly moonDirection = new T.Vector3(-daylight[0], -daylight[1], -daylight[2]).normalize();
     private readonly cloudField = makeCloudField();
@@ -16,6 +19,9 @@ export class Sky {
     private uniforms = {
         uCloudTex: { value: null as T.Texture | null },
         uCloudOn: { value: 0 },
+        uPanoTex: { value: null as T.Texture | null },
+        uPanoOn: { value: 0 },
+        uOmenMix: { value: 0 },
         uTime: { value: 0 },
         uSun: { value: this.sunDirection },
         uMoon: { value: this.moonDirection },
@@ -34,6 +40,22 @@ export class Sky {
     constructor(scene: T.Scene) {
         this.cloudBake = new CloudBake(this.sunDirection);
         this.uniforms.uCloudTex.value = this.cloudBake.target.texture;
+        if (this.isGuofeng && typeof window !== 'undefined') {
+            const url = new URL('../../resource/sky/guofeng_sky_pano.jpg', import.meta.url).href;
+            const tex = new T.TextureLoader().load(url, loaded => {
+                loaded.colorSpace = T.SRGBColorSpace;
+                loaded.wrapS = T.RepeatWrapping;
+                loaded.wrapT = T.ClampToEdgeWrapping;
+                // Disable mipmaps to prevent GPU dFdx(atan) derivative wrap-around seam line at ±π meridian.
+                loaded.generateMipmaps = false;
+                loaded.minFilter = T.LinearFilter;
+                loaded.magFilter = T.LinearFilter;
+                loaded.needsUpdate = true;
+                this.uniforms.uPanoTex.value = loaded;
+                this.uniforms.uPanoOn.value = 1;
+            });
+            this.panoTexture = tex;
+        }
         const material = new T.ShaderMaterial({
             side: T.BackSide,
             depthWrite: false,
@@ -43,10 +65,12 @@ export class Sky {
             vertexShader: `varying vec3 vDir;
                 void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }`,
             fragmentShader: `varying vec3 vDir;
-                uniform float uTime, uDayFactor, uNightFactor, uDuskFactor;
+                uniform float uTime, uDayFactor, uNightFactor, uDuskFactor, uOmenMix;
                 uniform vec3 uSun, uMoon, uZenith, uMid, uHorizon, uGlow, uCloudLit, uCloudShadow;
                 uniform sampler2D uCloudTex;
                 uniform float uCloudOn;
+                uniform sampler2D uPanoTex;
+                uniform float uPanoOn;
                 ${panoramaGLSL}
                 float starHash(vec3 p) {
                     p = fract(p * vec3(443.8975, 397.2973, 491.1871));
@@ -97,6 +121,28 @@ export class Sky {
                         c = mix(c, vec3(.96, .98, 1.0) * maria * 1.55, disc);
                     }
 
+                    if (uPanoOn > .5 && uNightFactor < .98) {
+                        // Seamless 360° equirectangular realistic sky dome with slow cloud drift & dynamic time-of-day tinting
+                        float az = fract(atan(d.z, d.x) / 6.2831853 + .5 + uTime * .0009);
+                        float el = clamp(asin(clamp(d.y, -1., 1.)) / 3.14159265 + .5, .002, .998);
+                        vec3 pano = texture2D(uPanoTex, vec2(az, el)).rgb;
+                        float panoLuma = dot(pano, vec3(.30, .59, .11));
+                        // Re-tint realistic clouds/sky gracefully during Dawn/Dusk & Celestial Omen
+                        vec3 duskTint = mix(vec3(.68, .54, .68), vec3(1.18, .76, .52), smoothstep(.32, .85, panoLuma));
+                        pano = mix(pano, pano * duskTint, uDuskFactor * .78);
+                        pano = mix(pano, vec3(.14, .19, .30) * (.55 + .85 * panoLuma), uOmenMix * .86);
+                        // Blend smoothly into night sky at twilight; preserve dynamic sun disc & lower cloud sea
+                        float panoWeight = (1. - smoothstep(.12, .88, uNightFactor)) * smoothstep(-.12, .05, h);
+                        c = mix(c, pano, panoWeight);
+                        // Re-add crisp live sun corona & disc over the realistic sky
+                        c += uGlow * sunHalo * sunVis * .45 * panoWeight;
+                        c += vec3(1., .96, .86) * 2.4 * smoothstep(.99962, .99988, sun) * sunVis * panoWeight;
+                        // Keep high-altitude lower cloud sea when flying above 226m
+                        if (d.y < 0. && cameraPosition.y > 226.) {
+                            c = cloudBank(c, d, 198., vec2(-2.5, 1.6), .95, sun);
+                            c = cloudBank(c, d, 312., vec2(-3.7, .85), .75, sun);
+                        }
+                    } else {
                     if (h > 0.) {
                         float cirrusDistance = (4940. - cameraPosition.y) / max(.12, h);
                         vec2 highCloud = (cameraPosition.xz + d.xz * cirrusDistance + vec2(-8., 3.) * uTime) / 18500.;
@@ -125,6 +171,7 @@ export class Sky {
                         }
                     }
                     c = paintPanorama(c, d, sun, moon);
+                    }
                     gl_FragColor = vec4(c, 1.0);
                     #include <tonemapping_fragment>
                     #include <colorspace_fragment>
@@ -148,6 +195,7 @@ export class Sky {
         this.uniforms.uDayFactor.value = s.dayFactor;
         this.uniforms.uNightFactor.value = s.nightFactor;
         this.uniforms.uDuskFactor.value = s.duskFactor;
+        this.uniforms.uOmenMix.value = 0;
     }
 
     private readonly omenZenith = new T.Color('#080d1b');
@@ -157,10 +205,26 @@ export class Sky {
     private readonly omenCloudLit = new T.Color('#4a5878');
     private readonly omenCloudShadow = new T.Color('#101728');
     private readonly omenFlashCol = new T.Color('#8c9cc9');
+    private readonly gfZenith = new T.Color('#1d4f94');
+    private readonly gfMid = new T.Color('#5184b8');
+    private readonly gfHorizon = new T.Color('#c8dce8');
+    private readonly gfCloudLit = new T.Color('#faf6ed');
+    private readonly gfCloudShadow = new T.Color('#7c98b8');
+
+    applyGuofengBlend(weight: number, dayFactor: number) {
+        const k = T.MathUtils.clamp(weight * dayFactor, 0, 1);
+        if (k <= 0.001) return;
+        this.uniforms.uZenith.value.lerp(this.gfZenith, k * 0.78);
+        this.uniforms.uMid.value.lerp(this.gfMid, k * 0.80);
+        this.uniforms.uHorizon.value.lerp(this.gfHorizon, k * 0.82);
+        this.uniforms.uCloudLit.value.lerp(this.gfCloudLit, k * 0.65);
+        this.uniforms.uCloudShadow.value.lerp(this.gfCloudShadow, k * 0.72);
+    }
 
     applyOmenBlend(intensity: number, flash: number, goldWeight = 0) {
         if (intensity <= 0.001) return;
         const k = T.MathUtils.clamp(intensity, 0, 1);
+        this.uniforms.uOmenMix.value = k;
         const f = T.MathUtils.clamp(flash * k * 0.22, 0, 0.28);
         const g = T.MathUtils.clamp(goldWeight, 0, 1);
         this.uniforms.uZenith.value.lerp(this.omenZenith, k * 0.90).lerp(this.omenFlashCol, f * 0.35);
@@ -187,6 +251,7 @@ export class Sky {
     dispose() {
         this.mesh.removeFromParent();
         this.cloudBake.dispose();
+        this.panoTexture?.dispose();
         this.cloudField.dispose();
         this.mountains.removeFromParent();
         this.mountains.geometry.dispose();

@@ -1,11 +1,13 @@
 import * as T from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { readArtStyle } from '../../config/settings';
 import { heightAt } from '../geo/height';
 import { floatingIslands, islandSurfaceAt, type Region } from '../geo/regions';
 import { addSolid } from '../physics/solid-world';
 import { peakland } from '../geo/peakland-plan';
 import { HouseGeometry, makeHouseMaterial, masonry } from './house-geometry';
 import { makeHouse, type HouseKind } from './house-models';
-import { atmosphereUniforms } from '../../rendering/aerial-perspective';
+import { aerialPerspectiveGLSL, atmosphereUniforms } from '../../rendering/aerial-perspective';
 import {populateVillageDetails} from './village-ground';
 
 type Lot = readonly [
@@ -80,7 +82,6 @@ export const buildingLots: Readonly<Record<string, readonly Lot[]>> = {
     ],
 };
 
-const allLots = Object.values(buildingLots).flat();
 type Facade = readonly [kind: HouseKind, turn: number, variant?: number];
 const facades: Readonly<Record<string, readonly Facade[]>> = {
     village: [
@@ -103,8 +104,14 @@ const specialScale: Partial<Record<HouseKind,readonly [footprint: number, height
     belltower:[.76,1.63], mushroom:[.88,1.14], thatch:[.76,1.22],
 };
 
+const allLotsWithKind: ReadonlyArray<readonly [Lot, HouseKind]> = Object.entries(buildingLots).flatMap(
+    ([regionId, lots]) => lots.map((lot, i) => [lot, facades[regionId]?.[i]?.[0] ?? 'cottage'] as const),
+);
+
 export function inBuildingLot(x: number, z: number, margin: number, island?: number) {
-    return allLots.some(([cx,cz,width,depth,,lotIsland]) =>
+    const skipMushroom = readArtStyle() === 'guofeng';
+    return allLotsWithKind.some(([[cx,cz,width,depth,,lotIsland], kind]) =>
+        !(skipMushroom && kind === 'mushroom') &&
         lotIsland === island && Math.abs(x-cx) < width/2+margin && Math.abs(z-cz) < depth/2+margin,
     );
 }
@@ -144,10 +151,12 @@ export function populateBuildingLayout(group: T.Group, region: Region, time?: {v
     const buildings = new T.Group();
     buildings.name = 'building-layout-' + region.id;
     group.add(buildings);
+    const isGuofeng = readArtStyle() === 'guofeng';
     const batches = new Map<string,{kind:HouseKind; variant:number; matrices:T.Matrix4[]}>();
     const footings: T.Matrix4[] = [];
     for (const [index, [x,z,width,depth,height,island]] of lots.entries()) {
         const [kind, turns, variant=0]=regionFacades[index];
+        if (isGuofeng && kind === 'mushroom') continue;
         const [footprint, rise]=specialScale[kind]??[.91,.95];
         const w=width*footprint, d=depth*footprint;
         const halfX=w*.38, halfZ=d*.38;
@@ -191,14 +200,113 @@ export function populateBuildingLayout(group: T.Group, region: Region, time?: {v
         mesh.computeBoundingSphere();
         mesh.castShadow=mesh.receiveShadow=opaque;
         buildings.add(mesh);
+        return mesh;
     };
+    const villageBatches: Array<{ kind: HouseKind; shellMesh: T.InstancedMesh; glowMesh?: T.InstancedMesh }> = [];
     for (const batch of batches.values()) {
         const { shell,glow }=makeHouse(batch.kind,batch.variant);
-        addBatch(shell,material,batch.matrices,batch.kind,true);
-        if (glow) addBatch(glow,glass,batch.matrices,batch.kind+'-windows',false);
+        const shellMesh = addBatch(shell,material,batch.matrices,batch.kind,true);
+        const glowMesh = glow ? addBatch(glow,glass,batch.matrices,batch.kind+'-windows',false) : undefined;
+        villageBatches.push({ kind: batch.kind, shellMesh, glowMesh });
     }
-    const foundation=new HouseGeometry(83);
-    masonry(foundation,0,0,3.74,3.74,0,.66,'#899297',2);
-    addBatch(foundation.finish().shell,material,footings,'stone-footings',true);
-    if(region.id==='village')populateVillageDetails(buildings,time);
+    if (footings.length > 0) {
+        const foundation=new HouseGeometry(83);
+        masonry(foundation,0,0,3.74,3.74,0,.66,'#899297',2);
+        addBatch(foundation.finish().shell,material,footings,'stone-footings',true);
+    }
+    if(region.id==='village'){
+        populateVillageDetails(buildings,time);
+    }
+    if (readArtStyle() === 'guofeng' && typeof window !== 'undefined') {
+        void upgradeVillageWithGuofengGLBs(villageBatches);
+    }
+}
+
+type ArchPair = { shell: T.BufferGeometry; glow?: T.BufferGeometry };
+let guofengArchKitPromise: Promise<{ cottage?: ArchPair; hall?: ArchPair; tower?: ArchPair; mat: T.MeshStandardMaterial } | undefined> | undefined;
+
+function loadGuofengArchKit() {
+    if (!guofengArchKitPromise) {
+        const loader = new GLTFLoader();
+        const loadPair = async (url: string): Promise<ArchPair | undefined> => {
+            const gltf = await loader.loadAsync(url);
+            let shell: T.BufferGeometry | undefined;
+            let glow: T.BufferGeometry | undefined;
+            gltf.scene.traverse(obj => {
+                if (!(obj instanceof T.Mesh)) return;
+                const g = obj.geometry.clone();
+                g.computeBoundingBox();
+                g.computeBoundingSphere();
+                if (obj.name.toLowerCase().includes('shell')) shell = g;
+                else if (obj.name.toLowerCase().includes('glow')) glow = g;
+            });
+            return shell ? { shell, glow } : undefined;
+        };
+        const cottageUrl = new URL('../../../resource/architecture/guofeng_house_cottage.glb', import.meta.url).href;
+        const hallUrl = new URL('../../../resource/architecture/guofeng_house_hall.glb', import.meta.url).href;
+        const towerUrl = new URL('../../../resource/architecture/guofeng_house_tower.glb', import.meta.url).href;
+        guofengArchKitPromise = Promise.all([
+            loadPair(cottageUrl),
+            loadPair(hallUrl),
+            loadPair(towerUrl),
+        ]).then(([cottage, hall, tower]) => ({
+            cottage,
+            hall,
+            tower,
+            mat: makeGuofengArchMaterial(),
+        })).catch(err => {
+            console.warn('Guofeng Blender house GLBs failed to load, keeping procedural fallback:', err);
+            return undefined;
+        });
+    }
+    return guofengArchKitPromise;
+}
+
+function makeGuofengArchMaterial() {
+    const mat = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, side: T.DoubleSide });
+    mat.customProgramCacheKey = () => 'guofeng-arch-v2';
+    mat.onBeforeCompile = shader => {
+        Object.assign(shader.uniforms, atmosphereUniforms);
+        shader.vertexShader = 'varying vec3 vArchWorld;\n' + shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+            #ifdef USE_INSTANCING
+                vArchWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+            #else
+                vArchWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+            #endif`,
+        );
+        shader.fragmentShader = `${aerialPerspectiveGLSL}\nvarying vec3 vArchWorld;\n` + shader.fragmentShader
+            .replace('#include <fog_fragment>', '')
+            .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+                // Harmonize PBR architecture ambient bounce with Lambert terrain & foliage so timber/stucco never crush to black.
+                reflectedLight.indirectDiffuse *= mix(vec3(1.18, 1.24, 1.32), vec3(1.26, 1.24, 1.18), uAtmoLight);
+                reflectedLight.indirectDiffuse += diffuseColor.rgb * mix(vec3(.07, .09, .12), vec3(.10, .10, .09), uAtmoLight);`)
+            .replace('#include <tonemapping_fragment>', `
+                float archDist = length(cameraPosition - vArchWorld);
+                gl_FragColor.rgb = mix(gl_FragColor.rgb, applyAerialPerspective(gl_FragColor.rgb, vArchWorld), smoothstep(160., 560., archDist));
+                #include <tonemapping_fragment>`);
+    };
+    return mat;
+}
+
+async function upgradeVillageWithGuofengGLBs(
+    entries: Array<{ kind: HouseKind; shellMesh: T.InstancedMesh; glowMesh?: T.InstancedMesh }>,
+) {
+    const kit = await loadGuofengArchKit();
+    if (!kit) return;
+    for (const entry of entries) {
+        if (entry.kind === 'mushroom') continue;
+        const pair = (entry.kind === 'belltower' || entry.kind === 'crooked') ? kit.tower
+            : (entry.kind === 'manor' || entry.kind === 'overhang') ? kit.hall
+            : kit.cottage;
+        if (!pair) continue;
+        entry.shellMesh.geometry.dispose();
+        entry.shellMesh.geometry = pair.shell;
+        entry.shellMesh.material = kit.mat;
+        if (entry.glowMesh && pair.glow) {
+            entry.glowMesh.geometry.dispose();
+            entry.glowMesh.geometry = pair.glow;
+        }
+    }
 }

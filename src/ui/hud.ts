@@ -1,4 +1,4 @@
-import type { Quality } from '../config/settings';
+import { readArtStyle, writeArtStyle, type ArtStyle, type Quality } from '../config/settings';
 import type { VitalsSnapshot } from '../player/vitals';
 import { REALMS, SKILL_MANA_COST } from '../player/cultivation';
 import type { SenseDangerIndicator, SenseMarkerProjection } from '../world/wildlife/wildlife';
@@ -366,6 +366,7 @@ export class HUD {
 <section class="panel hidden" id="panel">
   <h2>旅途设置</h2>
   <label>画质<select id="quality"><option value="low">轻盈 · 低</option><option value="medium">均衡 · 中</option><option value="high">清晰 · 高</option></select></label>
+  <label>画风<select id="art-style"><option value="anime">青翠国漫（默认）</option><option value="guofeng">国风厚涂（全图）</option></select></label>
   <label>昼夜流转<input id="day-auto" type="checkbox" checked/></label>
   <div class="time-control">
     <div class="time-row"><span>当前时辰</span><b id="time-readout">巳时 · 10:00</b></div>
@@ -390,8 +391,19 @@ export class HUD {
   <label>镜头侧倾<input id="roll" type="checkbox" checked/></label>
   <label>性能监控<input id="monitor" type="checkbox"/></label>
   <label>地形网格 / LOD<input id="wire" type="checkbox"/></label>
-  <p>低档降低渲染分辨率、植被、阴影与可视距离。设置自动保存。侧倾可关闭以减少眩晕。</p>
+  <p>低档降低渲染分辨率、植被、阴影与可视距离。切换画风将作用于全图并需重启页面生效。侧倾可关闭以减少眩晕。</p>
 </section>
+
+<div class="style-modal-backdrop hidden" id="style-restart-modal" role="dialog" aria-modal="true" aria-labelledby="style-modal-title">
+  <div class="style-modal-card">
+    <h3 id="style-modal-title">切换画风需要重启页面</h3>
+    <p id="style-modal-desc">即将切换画风。为避免实时重建着色器与材质导致设备卡顿，确认后将保存设置并重新加载页面。</p>
+    <div class="style-modal-actions">
+      <button type="button" class="style-btn-cancel" id="style-modal-cancel">暂不切换</button>
+      <button type="button" class="style-btn-confirm" id="style-modal-confirm">保存并重启</button>
+    </div>
+  </div>
+</div>
 
 <div class="debug hidden" id="debug"></div>
 
@@ -582,6 +594,35 @@ export class HUD {
         this.root.append(this.combatNotice);
 
         el<HTMLSelectElement>('quality').value = q;
+        const currentArtStyle: ArtStyle = readArtStyle();
+        const artStyleSelect = el<HTMLSelectElement>('art-style');
+        const styleModal = el('style-restart-modal');
+        const styleModalDesc = el('style-modal-desc');
+        let pendingArtStyle: ArtStyle | null = null;
+        artStyleSelect.value = currentArtStyle;
+        const closeStyleModal = () => {
+            pendingArtStyle = null;
+            artStyleSelect.value = currentArtStyle;
+            styleModal.classList.add('hidden');
+        };
+        artStyleSelect.onchange = () => {
+            const next = artStyleSelect.value as ArtStyle;
+            if (next === currentArtStyle) return;
+            pendingArtStyle = next;
+            if (document.pointerLockElement) document.exitPointerLock?.();
+            const label = next === 'guofeng' ? '国风厚涂（全图）' : '青翠国漫（默认）';
+            styleModalDesc.textContent = `即将切换为「${label}」。为避免实时重建着色器与材质导致设备卡顿，确认后将保存设置并重新加载页面。`;
+            styleModal.classList.remove('hidden');
+        };
+        el('style-modal-cancel').onclick = closeStyleModal;
+        styleModal.onclick = e => {
+            if (e.target === styleModal) closeStyleModal();
+        };
+        el('style-modal-confirm').onclick = () => {
+            if (!pendingArtStyle) return;
+            writeArtStyle(pendingArtStyle);
+            window.location.reload();
+        };
         welcome.bind(() => {
             this.started = true;
             welcome.hide();

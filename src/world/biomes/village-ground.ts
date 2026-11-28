@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { readArtStyle } from '../../config/settings';
 import {heightAt, randomAt, slopeAt, smooth, trailDistance} from '../geo/height';
 import {valleyArtAt} from '../geo/valley-art';
 import {makeLeafTexture,makeValleyShrub} from '../flora/flora-geometry';
@@ -62,7 +63,9 @@ float villageGround(vec2 p) {
 `;
 
 export function populateVillageDetails(group: T.Group, time?: { value:number }) {
+    const isGuofeng = readArtStyle() === 'guofeng';
     const boards: T.Matrix4[] = [], stones: T.Matrix4[] = [], shrubs: T.Matrix4[] = [];
+    const slabs: T.Matrix4[] = [], vats: T.Matrix4[] = [], firewood: T.Matrix4[] = [];
     const object=new T.Object3D(), up=new T.Vector3(0,1,0);
     function place(list: T.Matrix4[], x: number, z: number, elevation: number, w: number, h: number, d: number, angle: number) {
         object.position.set(x,heightAt(x,z)+elevation,z);
@@ -84,6 +87,24 @@ export function populateVillageDetails(group: T.Group, time?: { value:number }) 
                 object.updateMatrix();boards.push(object.matrix.clone());
             }
         }
+        if (isGuofeng) {
+            // Entry flagstone stepping slabs connecting courtyard entrance to the village lane
+            for (let s = 0; s < 4; s++) {
+                const sx = x + side * (s * 1.15 - 1.2);
+                const sz = z + (i % 2 === 0 ? d * .55 : -d * .55) + (randomAt(i, s, 301) - .5) * .35;
+                if (trailDistance(sx, sz) > 1.8) place(slabs, sx, sz, .04, .92 + randomAt(i, s, 302) * .35, .10, .68 + randomAt(i, s, 303) * .28, randomAt(i, s, 304) * .35);
+            }
+            // Ceramic water vat beside courtyard corner
+            const vx = x - side * (w * .52), vz = z + (i % 3 === 0 ? -d * .35 : d * .32);
+            if (trailDistance(vx, vz) > 3.2) place(vats, vx, vz, .42, .48, .82, .48, i * .7);
+            // Stacked firewood & drying rack logs
+            const wx = x + side * (w * .45), wz = z - d * .42;
+            if (trailDistance(wx, wz) > 3.4) {
+                for (let row = 0; row < 3; row++) {
+                    place(firewood, wx + (row - 1) * .22, wz, .14 + (row % 2) * .18, .18, .18, 1.15, (i % 2) * 1.57 + (randomAt(i, row, 309) - .5) * .12);
+                }
+            }
+        }
         for(let k=0;k<12;k++){
             const t=randomAt(i,k,73)*6.283, r=.82+randomAt(i,k,74)*.31;
             const px=x+Math.cos(t)*w*r,pz=z+Math.sin(t)*d*r;
@@ -93,16 +114,22 @@ export function populateVillageDetails(group: T.Group, time?: { value:number }) 
             else place(stones,px,pz,.044,s,s*.47,s*.68,t);
         }
     }
+    const vatGeo = new T.CylinderGeometry(.72, .56, 1, 9);
+    const logGeo = new T.CylinderGeometry(.5, .5, 1, 6);
+    logGeo.rotateX(Math.PI / 2);
     const batches=[
-        [boards,new T.BoxGeometry(),'#856043','village-fences'],
-        [stones,new T.IcosahedronGeometry(1,0),'#a19679','yard-stones'],
-        [shrubs,makeValleyShrub(),'#d5d9a5','yard-shrubs'],
+        [boards,new T.BoxGeometry(),isGuofeng ? '#5d4736' : '#856043','village-fences'],
+        [stones,new T.IcosahedronGeometry(1,0),isGuofeng ? '#7c7b70' : '#a19679','yard-stones'],
+        [shrubs,makeValleyShrub(isGuofeng),isGuofeng ? '#849664' : '#d5d9a5','yard-shrubs'],
+        [slabs,new T.BoxGeometry(),'#7e8076','yard-flagstones'],
+        [vats,vatGeo,'#5a4a3e','yard-water-vats'],
+        [firewood,logGeo,'#6b4f3a','yard-firewood'],
     ] as const;
     for(const [matrices,geometry,color,name] of batches) {
         if(!matrices.length){geometry.dispose();continue;}
         const material=new T.MeshLambertMaterial({color});
         if(matrices===shrubs){
-            material.map=makeLeafTexture();
+            material.map=makeLeafTexture(false,isGuofeng);
             material.alphaTest=.36;
             material.alphaToCoverage=true;
             material.side=T.DoubleSide;
@@ -112,7 +139,7 @@ export function populateVillageDetails(group: T.Group, time?: { value:number }) 
         mesh.name=name;
         matrices.forEach((matrix,i)=>mesh.setMatrixAt(i,matrix));
         mesh.instanceMatrix.needsUpdate=true;
-        mesh.castShadow=matrices===boards;mesh.receiveShadow=true;
+        mesh.castShadow=matrices===boards || matrices===vats;mesh.receiveShadow=true;
         group.add(mesh);
     }
     if(time) populateHearthSmoke(group,time);

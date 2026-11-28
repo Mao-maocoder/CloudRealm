@@ -329,6 +329,19 @@ export function makeDistantMountains(sun: T.Vector3) {
                 vec3 layerMistCol=mix(uAtmoMist,uAtmoAir,.32);
                 color=mix(color,layerMistCol,clamp(rangeMist+farVeil,0.,.58));
 
+                // Guofeng ink-wash distant mountain silhouettes: dissolve lower bases into luminous mist
+                // and step ridge depth into soft blue-grey / lavender-grey watercolor planes.
+                if(uGuofengStyle>.5){
+                    float inkLuma=dot(color,vec3(.30,.59,.11));
+                    vec3 inkRidge=mix(uAtmoAir*.62,uAtmoMist*.88,smoothstep(.15,.85,inkLuma));
+                    float inkFade=smoothstep(1250.,4600.,distToCam);
+                    color=mix(color,inkRidge,inkFade*.72);
+                    // Dissolve mountain base completely into valley horizon mist so no hard terrain seam appears
+                    float baseDissolve=exp(-max(0.,y-18.)/245.)*smoothstep(650.,2400.,distToCam);
+                    vec3 horizonMist=mix(uAtmoMist,uAtmoSunAir,.35*uDuskFactor+.18);
+                    color=mix(color,horizonMist,clamp(baseDissolve*.88,0.,.88));
+                }
+
                 color=applyAerialPerspective(color,vMountainPoint);
                 gl_FragColor=vec4(color,1.);
                 #include <tonemapping_fragment>

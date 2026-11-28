@@ -13,7 +13,7 @@ import {valleyLandmarksGLSL} from '../world/geo/valley-landmarks';
 import {fireballScorchSlots} from '../effects/fireball-impact';
 const fieldGLSL=`uniform vec4 uWalkTrail[8];
 vec2 walkBend(vec2 p,float ground){vec2 bend=vec2(0.);float strongest=0.;for(int i=0;i<8;i++){vec4 stamp=uWalkTrail[i];vec2 delta=p-stamp.xz;float d=length(delta);float strength=(1.-smoothstep(.2,1.35,d))*stamp.w*(1.-smoothstep(.5,1.8,abs(ground-stamp.y)));if(strength>strongest){strongest=strength;bend=delta/max(d,.12)*strength;}}float len=length(bend);return bend/max(1.,len)*1.1;}
-uniform sampler2D uMeadow;uniform vec4 uShell,uBlade;uniform vec2 uOrigin;uniform float uGrid,uSpacing,uTime,uType;varying vec3 vBladeTint;varying float vBladeTip;
+uniform sampler2D uMeadow;uniform vec4 uShell,uBlade;uniform vec2 uOrigin;uniform float uGrid,uSpacing,uTime,uType,uGuofengStyle;varying vec3 vBladeTint;varying float vBladeTip,vGfValley;
 uniform vec3 uField;uniform vec2 uFieldSize;uniform bool uIslandField,uDetail;
 uniform float uIslandTint;
 uniform float uFocalPixels;
@@ -78,7 +78,7 @@ void placeBlade(out vec3 P,out vec3 N){
  fade*=smoothstep(rnd.x*.69-.16,rnd.x*.69+.29,visibleSize)*visibleSize;
  vec4 clip=projectionMatrix*viewMatrix*vec4(root,1.);
  if(abs(clip.x)>clip.w*1.12||abs(clip.y)>clip.w*1.2||clip.w<0.)fade=0.;
- if(fade<.002){P=cameraPosition+vec3(0.,-10000.,0.);N=vec3(0.,1.,0.);vBladeTint=vec3(0.);vBladeTip=0.;return;}
+ if(fade<.002){P=cameraPosition+vec3(0.,-10000.,0.);N=vec3(0.,1.,0.);vBladeTint=vec3(0.);vBladeTip=0.;vGfValley=0.;return;}
  vec4 clearing=uIslandField?vec4(0.):clearingLight(xz);
  vec4 corridor=uIslandField?vec4(0.):riverCorridor(xz);
  float mud=smoothstep(.12,.73,1.-corridor.r*2.);
@@ -90,8 +90,22 @@ void placeBlade(out vec3 P,out vec3 N){
  float shoulder=groundMask(field,vec2(1.9,5.8))*(uIslandField?1.:1.-villageGround(xz));
  if(!uIslandField)shoulder*=1.-max(valleyFields(xz).x,valleyRuinGround(xz));
  fade*=smoothstep(.02,.28,field.g)*step(rnd.z,field.g*1.58)*shoulder;
- if(fade<.002){P=cameraPosition+vec3(0.,-10000.,0.);N=vec3(0.,1.,0.);vBladeTint=vec3(0.);vBladeTip=0.;return;}
+ if(fade<.002){P=cameraPosition+vec3(0.,-10000.,0.);N=vec3(0.,1.,0.);vBladeTint=vec3(0.);vBladeTip=0.;vGfValley=0.;return;}
  vec4 cl=mHash(floor(xz/.63));
+ float gfValley=uGuofengStyle;
+ vGfValley=gfValley;
+ // Multi-scale ecological patches for clump-level density, height, lean, and dry-grass variation.
+ float ecoPatch=mNoise(xz*.014+vec2(11.3,-6.7))*.62+mNoise(xz*.038+vec2(-8.2,14.1))*.38;
+ float dryPatch=smoothstep(.46,.84,mNoise(xz*.021+vec2(-19.4,8.6))*.68+mNoise(xz*.072+vec2(6.1,-13.4))*.32);
+ float clumpEco=mNoise(xz*.11+vec2(3.7,-12.9));
+ // Natural ecological gaps: thin grass over dry/rocky patches, dense canopy shade, and village aprons so exposed soil reads cleanly.
+ if(gfValley>.001){
+   float villageApron=uIslandField?0.:smoothstep(.04,.42,villageGround(xz));
+   float ecoGap=smoothstep(.14,.42,ecoPatch*.75+clumpEco*.25)*(1.-dryPatch*.48)*(1.-villageApron*.85);
+   fade*=mix(1.,ecoGap,gfValley);
+   if(fade<.002){P=cameraPosition+vec3(0.,-10000.,0.);N=vec3(0.,1.,0.);vBladeTint=vec3(0.);vBladeTip=0.;vGfValley=0.;return;}
+ }
+ vec4 ecoClump=mHash(floor(xz/1.45));
  float leaf=position.z, form=mod(uType*2.+step(.49,rnd.w),6.);
  // A shared fan direction within each tuft, with uneven spacing and lengths.
  float leafVariation=fract(rnd.z*13.73+leaf*.618);
@@ -102,30 +116,34 @@ void placeBlade(out vec3 P,out vec3 N){
  float radius=(.032+leaf*.020)*mix(.65,1.65,cl.y)*distSpread;
  root.xz+=rdir*radius;
  float gust=meadowGust(xz,uTime);
- float arch=mix(.12,.66,form/5.);
- vec2 lean=rdir*(arch+.20*cl.y+.10*leaf)+vec2(.85,.52)*(.21+.48*gust)+omenShockBend(xz)*1.15;
- lean+=vec2(-.52,.85)*sin(uTime*(1.2+rnd.x*.8)+rnd.y*6.28+leaf)*.037;
+ float arch=mix(.12,.66,form/5.)+gfValley*.30;
+ vec2 clumpFlow=vec2(cos(ecoClump.x*6.283),sin(ecoClump.x*6.283))*.34*gfValley;
+ vec2 lean=rdir*(arch+.20*cl.y+.10*leaf)+clumpFlow+vec2(.85,.52)*(.21+.48*gust)+omenShockBend(xz)*1.15;
+ lean+=vec2(-.52,.85)*sin(uTime*(1.2+rnd.x*.8)+rnd.y*6.28+leaf)*(.037+.018*gfValley);
  vec4 wake=surfaceWakeAt(xz);float whip=sin(uTime*21.+rnd.y*40.)*.35*min(wake.z,1.);lean+=walkBend(xz,field.r)+wake.xy*(1.+whip)+vec2(-wake.y,wake.x)*whip*.3;
- float ll=length(lean),tilt=min(ll,1.38);vec2 ldir=lean/max(ll,.0001);
+ float ll=length(lean),tilt=min(ll,1.46);vec2 ldir=lean/max(ll,.0001);
  // Natural clumped botanical height rhythm: lush tall grass tufts rise organically above softer short sward.
  float clumpPatch=smoothstep(.26,.78,mNoise(xz*.22+vec2(4.1,-9.3))*.68+mNoise(xz*.62+vec2(-11.4,6.7))*.32);
  float bankLush=smoothstep(.22,.72,field.b);
  float heightRhythm=mix(.58,1.38,clumpPatch)*(1.+.26*bankLush);
- float h=uBlade.y*heightRhythm*mix(.66,1.34,rnd.w)*mix(.76,1.16,cl.x)*(1.-.18*min(wake.z,1.))*(1.-leaf*.10);
+ float gfHeightRhythm=mix(.48,1.48,clumpPatch*.60+ecoClump.y*.40)*(1.+.28*bankLush)*(1.-dryPatch*.26);
+ heightRhythm=mix(heightRhythm,gfHeightRhythm,gfValley);
+ float h=uBlade.y*heightRhythm*mix(1.,1.16,gfValley)*mix(.66,1.34,rnd.w)*mix(.76,1.16,cl.x)*(1.-.18*min(wake.z,1.))*(1.-leaf*.10);
  h*=mix(.86,1.14,leafVariation)*mix(.55,1.,shoulder)*mix(.82,1.08,smoothstep(.28,.72,field.g));
  h*=mix(1.,.94-.12*clearing.a,clearing.r);
  vec3 l3=vec3(ldir.x,0.,ldir.y),p2=vec3(0.,h*cos(tilt),0.)+l3*h*sin(tilt);
- vec3 p1=vec3(0.,h*mix(.52,.78,form/5.),0.)+l3*h*sin(tilt)*mix(.30,.06,form/5.);
+ vec3 p1=vec3(0.,h*mix(.52,.78,form/5.),0.)+l3*h*sin(tilt)*mix(.30,.12,form/5.);
  float t=position.y,it=1.-t;vec3 c=p1*(2.*it*t)+p2*t*t,tg=normalize(p1*(2.*it-2.*t)+p2*2.*t);
  vec3 side=normalize(cross(vec3(0.,1.,0.),vec3(rdir.x,0.,rdir.y)));
  side=normalize(side+vec3(rdir.x,0.,rdir.y)*t*(cl.z-.5)*.72);
  if(!uDetail){vec3 screenSide=normalize(cross(tg,normalize(cameraPosition-root-c)));side=normalize(mix(side,screenSide*sign(dot(side,screenSide)+.0001),.72));}
- float width=uBlade.x*mix(.82,1.38,rnd.x)*(1.-pow(t,mix(1.25,2.5,form/5.)))*(.70+.30*smoothstep(0.,.25,t));
+ float taper=mix(1.-pow(t,mix(1.25,2.5,form/5.)), pow(max(0.,1.-t),1.15), gfValley);
+ float width=uBlade.x*mix(1.,.56,gfValley)*mix(.82,1.38,rnd.x)*taper*(.78+.22*smoothstep(0.,.22,t));
  if(!uDetail) width*=1.+smoothstep(28.,105.,d)*.55;
  width*=mix(1.,.80,clearing.r);
  // Smooth upward-aligned stylized normal eliminates shiny plastic per-blade striping.
  P=root+(c+side*position.x*width)*fade;
- N=normalize(vec3(0.,1.,0.)+l3*(.14*t)+cross(side,tg)*.12);
+ N=normalize(vec3(0.,1.,0.)+l3*(.18*t)+cross(side,tg)*.14);
  float macro=mNoise(xz*.028+7.3);
  float wavePatch=mNoise(xz*.085+vec2(-14.2,8.6));
  // Warm sunlit spring-meadow green palette (matte Ghibli / Genshin lush meadow tone).
@@ -133,6 +151,19 @@ void placeBlade(out vec3 P,out vec3 N){
  tint=mix(tint,vec3(.245,.555,.155),bankLush*.42);
  // Taller sunlit tufts catch a brighter golden-lime sheen while lower sward stays rich lush meadow green.
  tint=mix(tint,tint*vec3(1.10,1.12,.86)+vec3(.025,.035,.002),clumpPatch*.45);
+ // Painterly Guofeng sage, olive, grey-green & subtle dry straw mix scoped to Changfeng Valley.
+ if(gfValley>.001){
+   vec3 sageDark=vec3(.115,.220,.128);
+   vec3 oliveMid=vec3(.265,.340,.168);
+   vec3 greyGreen=vec3(.195,.275,.210);
+   vec3 dryStraw=vec3(.435,.385,.205);
+   vec3 gfTint=mix(sageDark,oliveMid,smoothstep(.16,.84,macro*.55+ecoClump.z*.28+clumpPatch*.17));
+   gfTint=mix(gfTint,greyGreen,smoothstep(.30,.78,wavePatch)*.42);
+   gfTint=mix(gfTint,vec3(.135,.260,.155),bankLush*.44);
+   gfTint=mix(gfTint,dryStraw,dryPatch*(.38+.35*ecoClump.w));
+   gfTint=mix(gfTint,gfTint*vec3(1.12,1.06,.84)+vec3(.018,.016,.005),clumpPatch*.38);
+   tint=mix(tint,gfTint,gfValley);
+ }
  if(uIslandField)tint=mix(tint,vec3(.22,.52,.22),uIslandTint);
  else {
    vec4 region=regionalTerrain(xz);
@@ -145,7 +176,9 @@ void placeBlade(out vec3 P,out vec3 N){
  tint=mix(tint,reach*(.94+.14*macro),corridorBlend*.56);
  tint=mix(tint,forestGrass*(.90+.20*macro),clearing.r);
  // Soft root-to-tip painterly gradient: bright warm tips, soft lush roots (no dark spiky plastic gaps).
- vec3 airy=mix(tint*mix(.96,.80,uBlade.z),tint*1.20+vec3(.048,.055,.006),pow(t,1.15));
+ vec3 animeAiry=mix(tint*mix(.96,.80,uBlade.z),tint*1.20+vec3(.048,.055,.006),pow(t,1.15));
+ vec3 gfAiry=mix(tint*mix(.54,.40,uBlade.z),tint*1.22+vec3(.052,.046,.016),pow(t,1.32));
+ vec3 airy=mix(animeAiry,gfAiry,gfValley);
  // Distant blades approach the same warm sunlit meadow midtone as the terrain.
  float handoff=uDetail?0.:smoothstep(38.,96.,d);
  vBladeTint=mix(airy,tint*(.95+.15*t),handoff*.60)*mix(.93,1.08,rnd.w);
@@ -169,12 +202,23 @@ void placeBlade(out vec3 P,out vec3 N){
  float share=smoothstep(uShell.x,uShell.y,d)*(1.-smoothstep(uShell.z,uShell.w,d));
  share*=projectedCoverage(root,d,uBlade.x*2.2,uBlade.y*.60);
  float threshold=clamp(mix(flowerCover*mix(.34,.48,uType)*(1.+.32*bankDrift),clearing.b*.30,clearing.r),0.,1.)*share;
+ float gfFlowerValley=uGuofengStyle;
+ if(gfFlowerValley>.001){
+   // Reduce uniform meadow flowers by ~80% globally (including islands, bays & uplands); keep tight natural clusters.
+   float pocket=smoothstep(.64,.86,mNoise(xz*.038+vec2(23.1,-11.7)))*smoothstep(.46,.80,mNoise(xz*.17+vec2(-7.3,19.4)));
+   float ecoSite=clamp(.16+bankDrift*.65+clearing.r*.55+(uIslandField?.22:0.),0.,1.);
+   float roadAvoid=uIslandField?1.:groundMask(field,vec2(5.2,9.8));
+   float gfThreshold=pocket*ecoSite*roadAvoid*mix(.30,.20,uType)*share;
+   threshold=mix(threshold,gfThreshold,gfFlowerValley);
+ }
  float rank=mHash(xz*7.31+4.7).x;
  float yard=uIslandField?0.:villageGround(xz);
  if(!uIslandField)yard=max(yard,max(valleyFields(xz).x,valleyRuinGround(xz)));
  float fade=smoothstep(0.,.30*threshold+.00001,threshold-rank)*smoothstep(.10,.41,field.g)*groundMask(field,vec2(3.2,5.6))*(1.-smoothstep(.08,.5,yard));
  vec4 clip=projectionMatrix*viewMatrix*vec4(root,1.);if(abs(clip.x)>clip.w*1.1||abs(clip.y)>clip.w*1.2||clip.w<0.)fade=0.;
- if(fade<.002){P=cameraPosition+vec3(0.,-10000.,0.);N=vec3(0.,1.,0.);vBladeTint=vec3(0.);vBladeTip=0.;vFlowerDisc=vec2(0.);vFlowerShape=vec3(0.);return;}
+ if(fade<.002){P=cameraPosition+vec3(0.,-10000.,0.);N=vec3(0.,1.,0.);vBladeTint=vec3(0.);vBladeTip=0.;vGfValley=0.;vFlowerDisc=vec2(0.);vFlowerShape=vec3(0.);return;}
+ float gfValley=gfFlowerValley;
+ vGfValley=gfValley;
  float gust=meadowGust(xz,uTime);vec4 wk=surfaceWakeAt(xz);vec2 lean=vec2(.85,.52)*(.12+gust*.2)+vec2(cos(rnd.x*6.28),sin(rnd.x*6.28))*.16+wk.xy*.8+walkBend(xz,field.r)*.8+omenShockBend(xz)*.9;
  float h=uBlade.y*mix(.82,1.38,rnd.w)*(1.+.16*bankDrift)*(1.-min(wk.z,1.)*.12),tilt=min(length(lean),1.25);vec3 l3=normalize(vec3(lean.x,.00001,lean.y)),tip=vec3(0.,h*cos(tilt),0.)+l3*h*sin(tilt),p1=vec3(0.,h*.6,0.)+l3*h*sin(tilt)*.12;
  // Clustered botanical flower drifts: sunny yellow, sky-blue, crisp white daisy, and soft coral-pink / lavender.
@@ -191,6 +235,9 @@ void placeBlade(out vec3 P,out vec3 N){
      :species<3.5?vec3(1.0,.52,.66)
      :vec3(.74,.48,1.0);
  petal*=mix(.90,1.10,rnd.y);
+ // Restrained natural ivory/pale-gold meadow blooms + rare jade-celadon Xianxia spirit herbs in damp hollows.
+ vec3 gfBloom=spPick>.91&&bankDrift>.35?vec3(.56,.88,.76):spPick>.70?vec3(.90,.80,.48):vec3(.94,.93,.87);
+ petal=mix(petal,gfBloom,gfValley*.92);
  petal*=mix(vec3(1.),vec3(.72,.86,.94),clearing.r*clearing.g);
  if(position.z<.5){float t=position.y,it=1.-t;vec3 c=p1*2.*it*t+tip*t*t,tangent=normalize(p1*(2.*it-2.*t)+tip*2.*t);vec3 side=normalize(cross(tangent,normalize(cameraPosition-root-c)));P=root+(c+side*position.x*.006)*fade;N=vec3(0.,1.,0.);vBladeTint=vec3(.20,.48,.14);vFlowerShape=vec3(0.,0.,0.);vFlowerDisc=vec2(0.);}
  else{float angle=rnd.x*6.283;vec3 hn=normalize(vec3(0.,1.,0.)+normalize(cameraPosition-root)*(.18+.42*uType)+vec3(cos(angle),0.,sin(angle))*.44),tx=normalize(cross(hn,vec3(cos(angle),.2,sin(angle)))),ty=cross(hn,tx);float radius=mix(.098,.165,uType)*mix(.68,1.48,rnd.w)*(1.+.16*bankDrift),r=length(position.xy);P=root+(tip+(tx*position.x+ty*position.y)*radius+hn*r*r*radius*.32)*fade;N=vec3(0.,1.,0.);vBladeTint=petal;vFlowerDisc=position.xy;vFlowerShape=vec3(count,species==1.?.30:.24,1.);}

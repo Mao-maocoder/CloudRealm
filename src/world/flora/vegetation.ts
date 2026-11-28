@@ -1,6 +1,7 @@
 import {addBoulderSolid,addSolid,releaseSolids} from '../physics/solid-world';
 import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { heightAt, randomAt, slopeAt, trailDistance, waterHeight, riverX, canPlantTree,fbm,smooth } from '../geo/height';
 import { toonMaterial } from '../../rendering/materials';
 import {upliftAt,waterLevelAt} from '../geo/relief';
@@ -10,6 +11,7 @@ import {valleyArtAt,valleyWoodland} from '../geo/valley-art';
 import {bankField,riverbankEnabled,riverbankHabitatAt} from '../geo/riverbank-habitat';
 import {bridgeArtEnabled,bridgeTrees} from '../geo/bridge-look';
 import {art} from '../../config/art';
+import {readArtStyle} from '../../config/settings';
 import { bounds, riverSamplesAt, waterSurfaceAt } from '../geo/geo-core';
 import { inBuildingLot } from '../biomes/building-layout';
 import { bossTreeClearance, inBossTerritory } from '../geo/boss-territories';
@@ -40,30 +42,33 @@ export class Vegetation {
     private broadMid=makeTreeCanopy('broadleaf',false);
     private sakuraMid=makeTreeCanopy('sakura',false);
     private pineMid=makeTreeCanopy('pine',false);
+    private readonly isGuofeng = readArtStyle() === 'guofeng';
     private valleyTrees = Array.from({length:valleyTreeCount},(_,kind)=>({
-        near:makeValleyTree(kind,true), far:makeValleyTree(kind,false),
+        near:makeValleyTree(kind,true,this.isGuofeng), far:makeValleyTree(kind,false,this.isGuofeng),
     }));
-    private leafTexture=makeLeafTexture();
+    private leafTexture=makeLeafTexture(false,this.isGuofeng);
     private blossomTexture=makeLeafTexture(true);
     private leafDepth=new T.MeshDepthMaterial({
-        map:this.leafTexture,alphaTest:.42,side:T.DoubleSide,depthPacking:T.RGBADepthPacking,
+        map:this.leafTexture,alphaTest:this.isGuofeng ? .34 : .42,side:T.DoubleSide,depthPacking:T.RGBADepthPacking,
     });
     private blossomDepth=new T.MeshDepthMaterial({
         map:this.blossomTexture,alphaTest:.40,side:T.DoubleSide,depthPacking:T.RGBADepthPacking,
     });
     private broad=new T.MeshLambertMaterial({
-        map:this.leafTexture,alphaTest:.42,alphaToCoverage:true,vertexColors:true,side:T.DoubleSide,
+        map:this.leafTexture,alphaTest:this.isGuofeng ? .34 : .42,alphaToCoverage:!this.isGuofeng,vertexColors:true,side:T.DoubleSide,
     });
-    private valleyLeaves = new T.MeshLambertMaterial({map:this.leafTexture,alphaTest:.42,alphaToCoverage:true,vertexColors:true,side:T.DoubleSide});
+    private valleyLeaves = new T.MeshLambertMaterial({map:this.leafTexture,alphaTest:this.isGuofeng ? .34 : .42,alphaToCoverage:!this.isGuofeng,vertexColors:true,side:T.DoubleSide});
     private valleyBark = makePainterlyBarkMaterial('#9c7e62');
-    private valleyShrub=makeValleyShrub();
+    private valleyShrub=makeValleyShrub(this.isGuofeng);
     private cloverGeo=makeCloverPatch();
     private bankFlowerGeo=makeBankFlowerCluster();
     private bankSedgeGeo=makeGrassTuft(9);
     private cloverMat=new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide});
     private bankFlowerMat=new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide});
     private bankSedgeMat=new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide});
-    private valleyBatches = new WeakMap<T.Group,{mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry}[]>();
+    private valleyBatches = new WeakMap<T.Group,{mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry;form?:number;part?:'trunk'|'canopy'}[]>();
+    private activeValleyEntries = new Set<{mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry;form:number;part:'trunk'|'canopy'}>();
+    private disposed = false;
     private grassFarGeo:T.BufferGeometry;
     private grassFar:T.MeshLambertMaterial;
     private rockGeo: T.BufferGeometry;
@@ -101,10 +106,10 @@ export class Vegetation {
 
         this.bark = makePainterlyBarkMaterial('#a8886b');
         this.sakura = new T.MeshLambertMaterial({
-            map:this.blossomTexture,alphaTest:.36,alphaToCoverage:true,vertexColors:true,side:T.DoubleSide,
+            map:this.blossomTexture,alphaTest:.36,alphaToCoverage:!this.isGuofeng,vertexColors:true,side:T.DoubleSide,
         });
         this.pine = new T.MeshLambertMaterial({
-            map:this.leafTexture,alphaTest:.36,alphaToCoverage:true,vertexColors:true,side:T.DoubleSide,
+            map:this.leafTexture,alphaTest:this.isGuofeng ? .34 : .36,alphaToCoverage:!this.isGuofeng,vertexColors:true,side:T.DoubleSide,
         });
         this.grass = new T.MeshLambertMaterial({map:this.grassTexture,alphaTest:.28,alphaToCoverage:true,side:T.DoubleSide,vertexColors:true,color:'#ffffff'});
         this.grassFar = new T.MeshLambertMaterial({map:this.grassTexture,alphaTest:.32,alphaToCoverage:true,side:T.DoubleSide,vertexColors:true});
@@ -121,6 +126,106 @@ export class Vegetation {
         windify(this.flower, this.uniforms, 0.07, 1.0, true);
         windify(this.reed, this.uniforms, 0.22, 1.0, true);
         windify(this.bankSedgeMat, this.uniforms, 0.18, 1.0, true);
+        if (this.isGuofeng && typeof window !== 'undefined') {
+            void this.loadGuofengTreeAssets();
+        }
+    }
+
+    private async loadGuofengTreeAssets() {
+        const loader = new GLTFLoader();
+        const loadPair = async (url: string) => {
+            const gltf = await loader.loadAsync(url);
+            let trunk: T.BufferGeometry | undefined;
+            let canopy: T.BufferGeometry | undefined;
+            let canopyFar: T.BufferGeometry | undefined;
+            gltf.scene.traverse(obj => {
+                if (!(obj instanceof T.Mesh)) return;
+                const g = obj.geometry.clone();
+                g.computeBoundingBox();
+                g.computeBoundingSphere();
+                const lname = obj.name.toLowerCase();
+                if (lname.includes('trunk')) trunk = g;
+                else if (lname.includes('canopyfar')) canopyFar = g;
+                else if (lname.includes('canopy')) canopy = g;
+            });
+            return trunk && canopy ? { trunk, canopy, canopyFar: canopyFar ?? canopy } : undefined;
+        };
+        try {
+            const elmUrl = new URL('../../../resource/flora/guofeng_elm.glb', import.meta.url).href;
+            const pineUrl = new URL('../../../resource/flora/guofeng_pine.glb', import.meta.url).href;
+            const oakUrl = new URL('../../../resource/flora/guofeng_oak.glb', import.meta.url).href;
+            const [elm, pine, oak] = await Promise.all([
+                loadPair(elmUrl),
+                loadPair(pineUrl),
+                loadPair(oakUrl),
+            ]);
+            if (this.disposed) {
+                for (const pair of [elm, pine, oak]) {
+                    pair?.trunk.dispose();
+                    pair?.canopy.dispose();
+                }
+                return;
+            }
+            const mapping = [elm, pine, oak, oak, pine];
+            const oldGeos = new Set<T.BufferGeometry>();
+            for (let form = 0; form < this.valleyTrees.length; form++) {
+                const pair = mapping[form];
+                if (!pair) continue;
+                oldGeos.add(this.valleyTrees[form].near.trunk);
+                oldGeos.add(this.valleyTrees[form].near.canopy);
+                oldGeos.add(this.valleyTrees[form].far.trunk);
+                oldGeos.add(this.valleyTrees[form].far.canopy);
+                this.valleyTrees[form].near = { trunk: pair.trunk, canopy: pair.canopy };
+                this.valleyTrees[form].far = { trunk: pair.trunk, canopy: pair.canopyFar };
+                for (const entry of this.activeValleyEntries) {
+                    if (entry.form !== form) continue;
+                    const nextNear = entry.part === 'trunk' ? pair.trunk : pair.canopy;
+                    const nextFar = entry.part === 'trunk' ? pair.trunk : pair.canopyFar;
+                    const wasFar = entry.mesh.geometry === entry.far;
+                    entry.near = nextNear;
+                    entry.far = nextFar;
+                    entry.mesh.geometry = wasFar ? nextFar : nextNear;
+                }
+            }
+            // Also upgrade upland broadleaf & mountain pine trees across high ridges (霁雪天阶, 丹枫峡, 青崖峰林)
+            if (oak) {
+                oldGeos.add(this.broadTrunk);
+                oldGeos.add(this.broadCrown);
+                oldGeos.add(this.broadMid);
+                this.broadTrunk = oak.trunk;
+                this.broadCrown = oak.canopy;
+                this.broadMid = oak.canopyFar;
+                for (const entry of this.activeValleyEntries) {
+                    if (entry.form !== 100) continue;
+                    const nextNear = entry.part === 'trunk' ? oak.trunk : oak.canopy;
+                    const nextFar = entry.part === 'trunk' ? oak.trunk : oak.canopyFar;
+                    const wasFar = entry.mesh.geometry === entry.far;
+                    entry.near = nextNear;
+                    entry.far = nextFar;
+                    entry.mesh.geometry = wasFar ? nextFar : nextNear;
+                }
+            }
+            if (pine) {
+                oldGeos.add(this.pineTrunk);
+                oldGeos.add(this.pineCrown);
+                oldGeos.add(this.pineMid);
+                this.pineTrunk = pine.trunk;
+                this.pineCrown = pine.canopy;
+                this.pineMid = pine.canopyFar;
+                for (const entry of this.activeValleyEntries) {
+                    if (entry.form !== 101) continue;
+                    const nextNear = entry.part === 'trunk' ? pine.trunk : pine.canopy;
+                    const nextFar = entry.part === 'trunk' ? pine.trunk : pine.canopyFar;
+                    const wasFar = entry.mesh.geometry === entry.far;
+                    entry.near = nextNear;
+                    entry.far = nextFar;
+                    entry.mesh.geometry = wasFar ? nextFar : nextNear;
+                }
+            }
+            oldGeos.forEach(g => g.dispose());
+        } catch (err) {
+            console.warn('Guofeng Blender tree GLBs failed to load, keeping procedural fallback:', err);
+        }
     }
 
     create(x: number, z: number, density: number,lod=0,groundGrass=true): T.Group {
@@ -218,7 +323,8 @@ export class Vegetation {
             if (h < waterHeight + .1 || h > 82)
                 continue;
             const slope = slopeAt(px, pz);
-            if (slope < .38 && h > 6)
+            const gfMeadowStone = this.isGuofeng && valleyArtAt(px, pz) > .25 && trailDistance(px, pz) > 6 && !inBuildingLot(px, pz, 5) && randomAt(px, pz, 118) > .68;
+            if (!gfMeadowStone && slope < .38 && h > 6)
                 continue;
             rocks.push([px, h, pz, .35 + randomAt(px, pz, 12) * 1.25]);
         }
@@ -263,7 +369,10 @@ export class Vegetation {
                     const size=.18+.68*roll*roll;
                     if(shore<4.5&&(roll<.36||height<water+.16))pebbles.push([px,height,pz,size]);
                     else if(roll<.68)bankSedges.push([px,height-.04,pz,.85+randomAt(px,pz,106)*1.05]);
-                    else if(roll<.84)bankFlowers.push([px,height-.02,pz,.65+randomAt(px,pz,109)*.62]);
+                    else if(roll<.84){
+                        if(!this.isGuofeng || randomAt(px,pz,119)<.30)
+                            bankFlowers.push([px,height-.02,pz,.65+randomAt(px,pz,109)*.62]);
+                    }
                     else if(roll<.93)clovers.push([px,height,pz,.80+randomAt(px,pz,110)*.65]);
                     else if(Math.hypot(px-79,pz-160)>14)shrubs.push([px,height-.06,pz,.68+randomAt(px,pz,107)*.68]);
                 }
@@ -324,13 +433,23 @@ export class Vegetation {
                 dummy.scale.setScalar(s);
                 if (kind === 0) {
                     dummy.scale.set(s, s * (.9 + randomAt(px, pz, 31) * .25), s);
-                    if(px < -360 && pz < -100 && pz > -1000)color.set('#f69b60').multiplyScalar(.88+randomAt(px,pz,33)*.22);
-                    else color.set('#ffd9e5').lerp(sakuraAlt,randomAt(px,pz,32))
-                        .multiplyScalar(.91+randomAt(px,pz,34)*.17);
+                    if(px < -360 && pz < -100 && pz > -1000) {
+                        color.set(this.isGuofeng ? '#c8663a' : '#f69b60').multiplyScalar(.88+randomAt(px,pz,33)*.22);
+                    } else if (this.isGuofeng) {
+                        color.set('#e8c8ce').lerp(new T.Color('#d6a8b6'), randomAt(px, pz, 32))
+                            .multiplyScalar(.92 + randomAt(px, pz, 34) * .14);
+                    } else {
+                        color.set('#ffd9e5').lerp(sakuraAlt,randomAt(px,pz,32))
+                            .multiplyScalar(.91+randomAt(px,pz,34)*.17);
+                    }
                 }
                 else if (kind === 1) {
                     dummy.scale.set(s * .9, s * (.9 + randomAt(px, pz, 35) * .3), s * .9);
-                    color.setHSL(.36 + randomAt(px, pz, 36) * .06, .26 + randomAt(px, pz, 37) * .14, .46 + randomAt(px, pz, 38) * .14);
+                    if (this.isGuofeng) {
+                        color.setHSL(.34 + randomAt(px, pz, 36) * .05, .20 + randomAt(px, pz, 37) * .10, .44 + randomAt(px, pz, 38) * .12);
+                    } else {
+                        color.setHSL(.36 + randomAt(px, pz, 36) * .06, .26 + randomAt(px, pz, 37) * .14, .46 + randomAt(px, pz, 38) * .14);
+                    }
                 }
                 else if (kind === 2) {
                     dummy.position.y-=.08;dummy.scale.set(s * 1.1, s * (.72 + randomAt(px, pz, 39) * .3), s * 1.1);
@@ -352,9 +471,15 @@ export class Vegetation {
                 else if(kind===7){
                     dummy.scale.set(s*(1.05+randomAt(px,pz,85)*.3),s*(.96+randomAt(px,pz,87)*.22),s*.98);
                     if(px < -360 && pz < -100 && pz > -1000) {
-                        const autumn=['#fa8054','#f5a953','#ffe36d','#eb6a53','#fac66c'];
+                        const autumn = this.isGuofeng
+                            ? ['#cc5636','#db7d3a','#e2ac48','#b5432f','#d18d3e']
+                            : ['#fa8054','#f5a953','#ffe36d','#eb6a53','#fac66c'];
                         color.set(autumn[Math.floor(randomAt(px,pz,86)*autumn.length)])
-                            .multiplyScalar(1.20+randomAt(px,pz,88)*.35);
+                            .multiplyScalar(this.isGuofeng ? (.96+randomAt(px,pz,88)*.18) : (1.20+randomAt(px,pz,88)*.35));
+                    } else if (this.isGuofeng) {
+                        const guofeng=['#98ad6e','#849e68','#a4b472','#769268','#acba78','#80986e'];
+                        const pick = Math.floor(randomAt(px,pz,86)*guofeng.length);
+                        color.set(guofeng[pick]).multiplyScalar(.96+randomAt(px,pz,88)*.16);
                     } else {
                         // Painterly sunlit chartreuse-lime, fresh emerald, and dreamy ocean-teal canopies.
                         const ghibli=['#e0f78e','#c8f080','#9de088','#78cf96','#3eaeb6','#2f98ad','#d4f488'];
@@ -363,8 +488,10 @@ export class Vegetation {
                     }
                 }
                 else if(kind===8) {
-                    const palette=['#d4ee82','#a8df84','#7fd18e','#c8eb7c','#4cb3a4'];
-                    color.set(palette[valleyForm!]).multiplyScalar(.88+randomAt(px,pz,93)*.26);
+                    const palette = this.isGuofeng
+                        ? ['#a0b270','#8da46a','#7c9768','#acb874','#728e6c']
+                        : ['#d4ee82','#a8df84','#7fd18e','#c8eb7c','#4cb3a4'];
+                    color.set(palette[valleyForm!]).multiplyScalar(.94+randomAt(px,pz,93)*.18);
                 }
                 else if(kind===9) {
                     dummy.scale.set(s*1.30,s*.48,s);
@@ -372,25 +499,33 @@ export class Vegetation {
                     color.set('#8d8e7e').lerp(new T.Color('#85755c'),randomAt(px,pz,121)).multiplyScalar(.71+randomAt(px,pz,122)*.30);
                 }
                 else if(kind===10) {
-                    dummy.scale.set(s*1.12,s*.78,s*1.12);
-                    const shrubPalette=['#a8e072','#78ca84','#52b292','#90d67c','#449f96'];
+                    dummy.scale.set(s*(this.isGuofeng ? 1.18 : 1.12),s*(this.isGuofeng ? .70 : .78),s*(this.isGuofeng ? 1.04 : 1.12));
+                    const shrubPalette = this.isGuofeng
+                        ? ['#849764','#728960','#929d68','#687e60','#7e8f66']
+                        : ['#a8e072','#78ca84','#52b292','#90d67c','#449f96'];
                     color.set(shrubPalette[Math.floor(randomAt(px,pz,123)*shrubPalette.length)])
-                        .multiplyScalar(.88+randomAt(px,pz,124)*.24);
+                        .multiplyScalar(.90+randomAt(px,pz,124)*.20);
                 }
                 else if(kind===11) {
                     dummy.scale.set(s*1.15,s*.95,s*1.15);
-                    color.set('#73be46').lerp(new T.Color('#4b9c42'),randomAt(px,pz,125))
+                    const cA = this.isGuofeng ? '#4b633c' : '#73be46';
+                    const cB = this.isGuofeng ? '#324a34' : '#4b9c42';
+                    color.set(cA).lerp(new T.Color(cB),randomAt(px,pz,125))
                         .multiplyScalar(.92+randomAt(px,pz,126)*.18);
                 }
                 else if(kind===12) {
                     dummy.scale.set(s*1.05,s*1.02,s*1.05);
-                    const bankBlooms=['#ffe44d','#fffaf0','#66b8ff','#ff8db8','#be92ff'];
+                    const bankBlooms = this.isGuofeng
+                        ? ['#f0ece2','#e5d89e','#f4f1e8','#9bcbb8']
+                        : ['#ffe44d','#fffaf0','#66b8ff','#ff8db8','#be92ff'];
                     color.set(bankBlooms[Math.floor(randomAt(px,pz,127)*bankBlooms.length)])
                         .multiplyScalar(.96+randomAt(px,pz,128)*.10);
                 }
                 else if(kind===13) {
                     dummy.scale.set(s*1.08,s*1.35,s*1.08);
-                    color.set('#a8de54').lerp(new T.Color('#48a04b'),randomAt(px,pz,129))
+                    const sA = this.isGuofeng ? '#5e7042' : '#a8de54';
+                    const sB = this.isGuofeng ? '#304935' : '#48a04b';
+                    color.set(sA).lerp(new T.Color(sB),randomAt(px,pz,129))
                         .multiplyScalar(.92+randomAt(px,pz,130)*.18);
                 }
                 else {
@@ -428,17 +563,35 @@ export class Vegetation {
         batch(this.sakuraTrunk, this.bark, sakuraTrees, -1);
         const blossoms=batch(this.sakuraCrown, this.sakura, sakuraTrees, 0);
         if(blossoms)detailBatches.push({mesh:blossoms,near:this.sakuraCrown,far:this.sakuraMid});
-        batch(this.pineTrunk, this.bark, pineTrees, -1);
-        const pines=batch(this.pineCrown, this.pine, pineTrees, 1);
-        if(pines)detailBatches.push({mesh:pines,near:this.pineCrown,far:this.pineMid});
-        batch(this.broadTrunk,this.bark,broadTrees,-1);
-        const broad=batch(this.broadCrown,this.broad,broadTrees,7);
-        if(broad)detailBatches.push({mesh:broad,near:this.broadCrown,far:this.broadMid});
+        const pineT = batch(this.pineTrunk, this.bark, pineTrees, -1);
+        const pines = batch(this.pineCrown, this.pine, pineTrees, 1);
+        if (pineT && pines) {
+            const ptEntry = { mesh: pineT, near: this.pineTrunk, far: this.pineTrunk, form: 101, part: 'trunk' as const };
+            const pcEntry = { mesh: pines, near: this.pineCrown, far: this.pineMid, form: 101, part: 'canopy' as const };
+            detailBatches.push(ptEntry, pcEntry);
+            this.activeValleyEntries.add(ptEntry);
+            this.activeValleyEntries.add(pcEntry);
+        }
+        const broadT = batch(this.broadTrunk, this.bark, broadTrees, -1);
+        const broad = batch(this.broadCrown, this.broad, broadTrees, 7);
+        if (broadT && broad) {
+            const btEntry = { mesh: broadT, near: this.broadTrunk, far: this.broadTrunk, form: 100, part: 'trunk' as const };
+            const bcEntry = { mesh: broad, near: this.broadCrown, far: this.broadMid, form: 100, part: 'canopy' as const };
+            detailBatches.push(btEntry, bcEntry);
+            this.activeValleyEntries.add(btEntry);
+            this.activeValleyEntries.add(bcEntry);
+        }
         for (const [form,points] of valleyTrees.entries()){
             const {near,far}=this.valleyTrees[form];
             const trunk=batch(near.trunk,this.valleyBark,points,-1);
             const canopy=batch(near.canopy,this.valleyLeaves,points,8,form);
-            if(trunk&&canopy)detailBatches.push({mesh:trunk,near:near.trunk,far:far.trunk},{mesh:canopy,near:near.canopy,far:far.canopy});
+            if(trunk&&canopy){
+                const tEntry = {mesh:trunk,near:near.trunk,far:far.trunk,form,part:'trunk' as const};
+                const cEntry = {mesh:canopy,near:near.canopy,far:far.canopy,form,part:'canopy' as const};
+                detailBatches.push(tEntry,cEntry);
+                this.activeValleyEntries.add(tEntry);
+                this.activeValleyEntries.add(cEntry);
+            }
         }
         if(detailBatches.length)this.valleyBatches.set(group,detailBatches);
         batch(lod===0?this.grassGeo:this.grassFarGeo, lod===0?this.grass:this.grassFar, grasses, 2);
@@ -461,7 +614,7 @@ export class Vegetation {
                 const distance=mesh.boundingSphere!.distanceToPoint(camera.position);
                 const useFar=distance>range+(mesh.geometry===far?-13:13);
                 mesh.geometry=useFar?far:near;
-                mesh.castShadow=distance<95;
+                mesh.castShadow=distance<78;
             }
         }
         // Only cast shadows inside the directional sun's ±70 m shadow frustum.
@@ -469,13 +622,21 @@ export class Vegetation {
             if(!(child instanceof T.InstancedMesh)||!child.boundingSphere)continue;
             if(child.castShadow||child.userData.shadowCaster){
                 child.userData.shadowCaster=true;
-                child.castShadow=child.boundingSphere.distanceToPoint(camera.position)<95;
+                child.castShadow=child.boundingSphere.distanceToPoint(camera.position)<78;
             }
         }
     }
     update(time:number,position:T.Vector3,velocity:T.Vector3,_clearance:number){this.uniforms.time.value=time;this.uniforms.player.value.copy(position);this.uniforms.playerVel.value.copy(velocity);}
     release(g: T.Group) {
         releaseSolids(g);
+        const batches = this.valleyBatches.get(g);
+        if (batches) {
+            for (const entry of batches) {
+                if (entry.form !== undefined && entry.part !== undefined) {
+                    this.activeValleyEntries.delete(entry as {mesh:T.InstancedMesh;near:T.BufferGeometry;far:T.BufferGeometry;form:number;part:'trunk'|'canopy'});
+                }
+            }
+        }
         g.traverse(o => {
             if (o instanceof T.InstancedMesh)
                 o.dispose();
@@ -483,10 +644,14 @@ export class Vegetation {
     }
 
     dispose() {
+        this.disposed = true;
+        this.activeValleyEntries.clear();
+        const uniqueGeos = new Set<T.BufferGeometry>();
         for(const {near,far} of this.valleyTrees)for(const {trunk,canopy} of [near,far]){
-            trunk.dispose();
-            canopy.dispose();
+            uniqueGeos.add(trunk);
+            uniqueGeos.add(canopy);
         }
+        uniqueGeos.forEach(g => g.dispose());
         this.valleyLeaves.dispose();this.leafTexture.dispose();
         this.blossomTexture.dispose();
         this.leafDepth.dispose();

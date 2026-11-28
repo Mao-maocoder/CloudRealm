@@ -144,6 +144,7 @@ export function createTerrainMaterial() {
             vec2 warp=vec2(tNoise(worldUV*.014+vec2(3.7,9.1)),tNoise(worldUV*.017+vec2(72.1,5.9)))*16.0;
             float macro=tFbm((worldUV+warp)*.037);
             float valley=valleyArtAt(worldUV);
+            float gfValley=uGuofengStyle;
             float footprint=max(length(dFdx(worldUV)),length(dFdy(worldUV)));
             float fineFade=1.-smoothstep(.3,1.8,footprint);
             // Height-derived shading remains stable when the rendered mesh changes LOD.
@@ -197,15 +198,22 @@ export function createTerrainMaterial() {
             float pasture=tNoise(swale*vec2(.019,.031))*.50+macro*.30+mott*.20;
             float sunlit=smoothstep(.24,.72,pasture);
             vec3 valleyGrass=mix(vec3(.175,.455,.125),vec3(.485,.715,.142),sunlit);
+            vec3 gfValleyGrass=mix(vec3(.125,.245,.125),vec3(.345,.415,.195),sunlit);
+            valleyGrass=mix(valleyGrass,gfValleyGrass,gfValley);
             float tussock=tNoise(swale*vec2(.85,1.24)+fine*.42);
             float strokes=smoothstep(.42,.78,tussock)*fineFade;
             valleyGrass*=.84+.22*mott+.20*strokes;
-            valleyGrass+=vec3(.085,.088,.008)*strokes*sunlit;
+            valleyGrass+=mix(vec3(.085,.088,.008),vec3(.048,.046,.016),gfValley)*strokes*sunlit;
             vec2 brushUV=(worldUV+.25*warp);
             float brush=texture2D(uPasture,brushUV/11.5).r;
             valleyGrass*=.66+.70*brush;
-            valleyGrass=mix(valleyGrass,vec3(.145,.42,.155),wet*.45);
+            valleyGrass=mix(valleyGrass,mix(vec3(.145,.42,.155),vec3(.105,.225,.135),gfValley),wet*.45);
             vec3 uplandGrass=mix(vec3(.19,.49,.145),biome.rgb*(.86+.26*macro+.22*mott+.18*strokes),.60)*(.84+.28*brush);
+            if(gfValley>.001){
+                float uLuma=dot(uplandGrass,vec3(.30,.59,.11));
+                vec3 gfUpland=mix(vec3(uLuma)*vec3(.92,.96,.88),uplandGrass*vec3(.84,.72,.80),.58);
+                uplandGrass=mix(uplandGrass,gfUpland,gfValley*.82);
+            }
             float forestFloor=smoothstep(.19,.76,biome.a);
             uplandGrass=mix(uplandGrass,uplandGrass*vec3(.56,.82,.82),forestFloor*.40);
             sward=mix(sward,uplandGrass,.84);
@@ -223,9 +231,10 @@ export function createTerrainMaterial() {
             float flowerSpecies = tNoise(worldUV * .008 + 3.7);
             vec3 flowerWash = flowerSpecies < .30 ? vec3(.48, .38, .66)
                 : flowerSpecies < .62 ? vec3(.84, .74, .22) : vec3(.78, .48, .58);
-            diffuseColor.rgb = mix(diffuseColor.rgb, flowerWash, meadow * valley * flowerField * .20);
+            flowerWash = mix(flowerWash, vec3(.82, .81, .74), gfValley * .85);
+            diffuseColor.rgb = mix(diffuseColor.rgb, flowerWash, meadow * valley * flowerField * mix(.20, .07, gfValley));
             float pinkField = smoothstep(.56, .78, tNoise(worldUV * .011 + vec2(5., 9.))) * (.35 + .65 * flowerSpeck);
-            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.66, .40, .50), meadow * valley * pinkField * .14);
+            diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(.66, .40, .50), vec3(.78, .77, .70), gfValley), meadow * valley * pinkField * mix(.14, .04, gfValley));
             float gravel=mix(.5,tNoise(worldUV*2.7+warp),fineFade);
             vec3 bank=mix(vec3(.37,.34,.25),vec3(.64,.60,.46),gravel);
             vec3 dampBank=mix(vec3(.19,.144,.097),vec3(.42,.359,.251),.62*gravel+.38*macro);
@@ -261,6 +270,8 @@ export function createTerrainMaterial() {
             vec3 dryMeadow=mix(vec3(.21,.49,.135),vec3(.51,.72,.15),
                                smoothstep(.24,.72,.52*macro+.48*mott));
             vec3 wetGrass=mix(vec3(.115,.385,.155),vec3(.27,.57,.165),mott);
+            dryMeadow=mix(dryMeadow,mix(vec3(.140,.255,.128),vec3(.345,.415,.198),smoothstep(.24,.72,.52*macro+.48*mott)),gfValley);
+            wetGrass=mix(wetGrass,mix(vec3(.095,.215,.128),vec3(.195,.320,.162),mott),gfValley);
             vec3 bankCover=mix(dryMeadow,wetGrass,wetMeadow);
             bankCover=mix(bankCover,vec3(.095,.285,.145),smoothstep(.14,.79,habitat.g)*.68);
             bankCover*=(.70+.64*brush)*(.94+.22*strokes);
@@ -269,7 +280,8 @@ export function createTerrainMaterial() {
             float bankBloom=smoothstep(.46,.76,tNoise(worldUV*.055+vec2(17.,-9.)))*smoothstep(.38,.78,tNoise(worldUV*.42+vec2(-5.,11.)));
             float bankHue=tNoise(worldUV*.032+4.3);
             vec3 bankFlowerCol=bankHue<.38?vec3(.96,.84,.22):bankHue<.68?vec3(.48,.74,.98):vec3(.98,.94,.88);
-            bankCover=mix(bankCover,bankFlowerCol,bankFlowerBand*bankBloom*.42);
+            bankFlowerCol=mix(bankFlowerCol,vec3(.92,.91,.85),gfValley*.85);
+            bankCover=mix(bankCover,bankFlowerCol,bankFlowerBand*bankBloom*mix(.42,.18,gfValley));
             vec3 sediment=mix(vec3(.31,.215,.135),vec3(.50,.39,.245),.57*gravel+.43*mott);
             bankCover=mix(bankCover,sediment,smoothstep(.10,.57,habitat.b));
             float plantedSlope=1.-smoothstep(.16,.43,terrainSlope);
@@ -426,6 +438,7 @@ export function createTerrainMaterial() {
                 float groundTuft=clumps.a*.65+tufts.a*.35-.4;
                 vec3 rimTint=mix(vec3(.055,.105,.025),vec3(.165,.195,.038),
                                  max(openPasture,valley*.75)*(1.-forestBand*.72)*(1.-wetBand*.45));
+                rimTint=mix(rimTint,vec3(.078,.082,.038),gfValley*.82);
                 vec3 crownColor=diffuseColor.rgb*(1.04+crownLight+softSlope*.24);
                 crownColor+=rimTint*(.34+groundTuft*.95);
                 crownColor=mix(crownColor,crownColor*vec3(.76,.92,.88),forestBand*.20);
@@ -468,6 +481,68 @@ export function createTerrainMaterial() {
                 overviewCoverage*overlook*corridor.a*.83);
             float canopyShadow=canopyShade(worldUV)*smoothstep(65.,220.,surfaceDistance);
             diffuseColor.rgb*=mix(vec3(1.),vec3(.50,.62,.68),canopyShadow*drySurface);
+            // Multi-layer natural ground transition for Changfeng Valley (dry soil, damp earth, gravel, fallen leaves, dry grass).
+            if(gfValley>.001){
+                float ecoDry=smoothstep(.46,.82,tNoise(worldUV*.021+vec2(-19.4,8.6))*.68+tNoise(worldUV*.072+vec2(6.1,-13.4))*.32);
+                float litterMask=clamp(canopyShade(worldUV)*1.15+forestBand*.55+clearing.g*.45,0.,1.)*drySurface*grassRoadMask;
+                float screeMask=smoothstep(.12,.30,terrainSlope)*(.45+.55*gravel);
+                vec3 dryEarth=mix(vec3(.29,.23,.16),vec3(.41,.34,.24),gravel*.65+macro*.35);
+                vec3 dampEarth=mix(vec3(.13,.11,.08),vec3(.21,.18,.13),mott);
+                vec3 gravelScree=mix(vec3(.30,.30,.27),vec3(.46,.44,.39),gravel);
+                vec3 leafLitter=mix(vec3(.21,.17,.11),vec3(.33,.27,.16),fine*.55+mott*.45);
+                vec3 drySward=mix(vec3(.34,.31,.18),vec3(.44,.39,.22),mott);
+                // Blend dry straw/earth patches across rolling slopes
+                diffuseColor.rgb=mix(diffuseColor.rgb,mix(drySward,dryEarth,smoothstep(.58,.86,ecoDry)*.65),meadow*ecoDry*.52*gfValley);
+                // Fallen leaves & humus under tree canopies
+                diffuseColor.rgb=mix(diffuseColor.rgb,leafLitter,litterMask*.54*gfValley);
+                // Damp dark soil along wet river margins
+                diffuseColor.rgb=mix(diffuseColor.rgb,dampEarth,wet*.46*gfValley);
+                // Gravel & exposed rock scree on steeper inclines
+                diffuseColor.rgb=mix(diffuseColor.rgb,gravelScree,screeMask*.42*gfValley);
+                // Regional ground identity: fallen bamboo leaves in 听竹泽 & golden-russet maple litter in 丹枫峡
+                float bambooDist=length((worldUV-vec2(-640.,620.))/vec2(345.,315.));
+                float bambooGround=(1.-smoothstep(.45,1.02,bambooDist))*drySurface*grassRoadMask;
+                if(bambooGround>.005){
+                    float bLeaf=tNoise(worldUV*.38+warp*.12)*.55+tNoise(worldUV*1.15)*.45;
+                    vec3 bambooFloor=mix(vec3(.13,.19,.11),vec3(.30,.28,.16),smoothstep(.35,.78,bLeaf));
+                    diffuseColor.rgb=mix(diffuseColor.rgb,bambooFloor,bambooGround*.52*gfValley);
+                }
+                float autumnDist=length((worldUV-vec2(-740.,-470.))/vec2(380.,340.));
+                float autumnGround=(1.-smoothstep(.35,1.02,autumnDist))*drySurface*grassRoadMask*(1.-smoothstep(.18,.38,terrainSlope));
+                if(autumnGround>.005){
+                    float mLeaf=tNoise(worldUV*.24+warp*.16)*.60+tNoise(worldUV*.85)*.40;
+                    vec3 mapleFloor=mix(vec3(.36,.20,.10),vec3(.56,.36,.14),smoothstep(.30,.78,mLeaf));
+                    diffuseColor.rgb=mix(diffuseColor.rgb,mapleFloor,autumnGround*smoothstep(.28,.72,mLeaf)*.46*gfValley);
+                }
+                // Global 3D triplanar stratified cliff rock for all steep mountain walls
+                // Strictly uses smooth baked terrainNormal/terrainSlope (NEVER per-triangle faceSlope)
+                // so 8 m CDLOD grid facets can never create checkerboard/stair-step blocks.
+                float cliffBreak=tNoise(worldUV*.024+warp*.18)*.62+tNoise(worldUV*.075+vec2(vWPos.y*.018,4.1))*.38;
+                float gfCliffMask=smoothstep(.16,.38,terrainSlope+(cliffBreak-.50)*.14)*(1.-peakland*.88)*(1.-cliffExposure*.88);
+                if(gfCliffMask>.002){
+                    vec3 cliffN=normalize(terrainNormal);
+                    vec4 cRock=rockTriplanar(vWPos,cliffN,.038);
+                    float cWarp=(cRock.r-.5)*14.+(macro-.5)*18.;
+                    float cStrata=tNoise(vec2((vWPos.y+cWarp)*.048,(worldUV.x*.009-worldUV.y*.007)+cRock.b*.6));
+                    float cFissure=smoothstep(.48,.82,cRock.g*.62+cRock.b*.38);
+                    // Stylized Eastern mountain limestone & slate: cool blue-grey, weathered grey, warm ochre accents
+                    vec3 deepSlate=vec3(.19,.23,.27);
+                    vec3 midStone=vec3(.36,.38,.39);
+                    vec3 warmStrata=vec3(.48,.44,.38);
+                    vec3 cliffCol=mix(deepSlate,midStone,smoothstep(.18,.74,cStrata*.55+cRock.r*.45));
+                    cliffCol=mix(cliffCol,warmStrata,.36*smoothstep(.46,.84,cRock.b*.55+cStrata*.45));
+                    cliffCol*=.78+.38*cRock.r-.22*cFissure;
+                    // Organic moss & soil clinging to gentler rock ledges
+                    float cLedge=smoothstep(.64,.88,cliffN.y)*smoothstep(.32,.70,macro);
+                    cliffCol=mix(cliffCol,vec3(.17,.24,.15),cLedge*.48);
+                    diffuseColor.rgb=mix(diffuseColor.rgb,cliffCol,gfCliffMask*.94*gfValley);
+                    terrainRockRelief+=gfCliffMask*gfValley*((cRock.r-.5)*.82+(cRock.g-.5)*.54);
+                }
+                // Trampled packed soil & stone grit apron around village foundations & lanes
+                float vApron=villageGround(worldUV);
+                vec3 villageGrit=mix(dryEarth,gravelScree,.42*gravel);
+                diffuseColor.rgb=mix(diffuseColor.rgb,villageGrit,smoothstep(.05,.62,vApron)*.72*gfValley);
+            }
             // Vibrant speckled wildflower drifts along valley slopes & riverbanks.
             float wildFlower=meadow*valley*grassRoadMask*(1.-farmCoverage)*(1.-ruinCoverage);
             if(wildFlower>.001){
@@ -478,10 +553,11 @@ export function createTerrainMaterial() {
                     *smoothstep(.28,.70,finePatch)*(.34+.66*dots);
                 float species=tNoise(worldUV*.014+3.7);
                 vec3 wash=species<.28?vec3(.46,.74,.99):species<.62?vec3(.98,.86,.20):species<.82?vec3(.98,.96,.90):vec3(.95,.54,.68);
-                diffuseColor.rgb=mix(diffuseColor.rgb,wash,min(.52,wildFlower*flowerPatch*.30*shoreBoost));
+                wash=mix(wash,vec3(.92,.91,.85),gfValley*.90);
+                diffuseColor.rgb=mix(diffuseColor.rgb,wash,min(.52,wildFlower*flowerPatch*mix(.30,.12,gfValley)*shoreBoost));
                 float goldDrift=smoothstep(.52,.78,tNoise(worldUV*.018+vec2(5.,9.)))
                     *smoothstep(.30,.70,finePatch)*(.32+.68*dots);
-                diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.98,.84,.18),min(.44,wildFlower*goldDrift*.24*shoreBoost));
+                diffuseColor.rgb=mix(diffuseColor.rgb,mix(vec3(.98,.84,.18),vec3(.88,.84,.66),gfValley),min(.44,wildFlower*goldDrift*mix(.24,.08,gfValley)*shoreBoost));
             }
             float snowMeadow=(1.-smoothstep(-350.,-165.,worldUV.y))*smoothstep(-1080.,-740.,worldUV.y);
             float bloomBank=snowMeadow*grassCoverage*(1.-forestBand*.79)*(1.-wetBand*.66);
@@ -490,7 +566,8 @@ export function createTerrainMaterial() {
                 float heads=smoothstep(.50,.78,tNoise(worldUV*.64+warp*.08));
                 heads=mix(.34,heads,1.-smoothstep(.94,3.4,footprint));
                 vec3 flowers=mix(vec3(.78,.72,.27),vec3(.70,.51,.78),smoothstep(.35,.68,mott));
-                diffuseColor.rgb=mix(diffuseColor.rgb,flowers,bloomBank*drift*heads*.69);
+                flowers=mix(flowers,vec3(.86,.84,.76),gfValley*.82);
+                diffuseColor.rgb=mix(diffuseColor.rgb,flowers,bloomBank*drift*heads*mix(.69,.18,gfValley));
             }
             `
         );
@@ -501,7 +578,12 @@ export function createTerrainMaterial() {
                 float terrainSunLit = smoothstep(.03, .28, terrainDirect);
                 vec3 terrainShadeTone = mix(vec3(.80, .92, 1.0), vec3(.54, 1.03, 1.04), uAtmoLight);
                 vec3 terrainSunTone = mix(vec3(1.), vec3(1.06, 1.18, .60), uAtmoLight * grassCoverage);
-                reflectedLight.indirectDiffuse *= mix(terrainShadeTone, vec3(1.05, 1.12, .74), terrainSunLit);
+                vec3 gfTerrainShade = mix(vec3(.76, .84, .92), vec3(.48, .64, .72), uAtmoLight);
+                vec3 gfTerrainSun = mix(vec3(1.), vec3(1.10, 1.02, .80), uAtmoLight * grassCoverage);
+                terrainShadeTone = mix(terrainShadeTone, gfTerrainShade, gfValley);
+                terrainSunTone = mix(terrainSunTone, gfTerrainSun, gfValley);
+                vec3 terrainIndirectLit = mix(vec3(1.05, 1.12, .74), vec3(.96, .95, .82), gfValley);
+                reflectedLight.indirectDiffuse *= mix(terrainShadeTone, terrainIndirectLit, terrainSunLit);
                 reflectedLight.directDiffuse *= mix(vec3(1.), terrainSunTone, terrainSunLit * .84);`)
             .replace('#include <tonemapping_fragment>',`gl_FragColor.rgb=mix(gl_FragColor.rgb,
                 applyAerialPerspective(gl_FragColor.rgb,vWPos),smoothstep(130.,470.,fieldDistance));
@@ -511,7 +593,7 @@ export function createTerrainMaterial() {
           if(geoNormal.y<0.)geoNormal=-geoNormal;
           // Faceted triangle normals read as a voxel/grid wall on cliffs, so those
           // faces lean on the smooth baked normal even up close.
-          float smoothNormal=max(max(smoothstep(90.,480.,surfaceDistance)*.82,cliffExposure*.80),peakRock*.79);
+          float smoothNormal=max(max(smoothstep(75.,420.,surfaceDistance)*.84,cliffExposure*.82),max(peakRock*.80,uGuofengStyle*mix(.92,1.,smoothstep(.06,.22,terrainSlope))));
           normal=normalize(mat3(viewMatrix)*mix(geoNormal,terrainNormal,smoothNormal));
           // A screen-space derivative bump on the 8 m height grid amplified its
           // facets into a visible checkerboard, so only fine grain is restored.

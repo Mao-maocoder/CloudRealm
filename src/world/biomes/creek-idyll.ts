@@ -1,4 +1,6 @@
 import * as T from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { readArtStyle } from '../../config/settings';
 import { heightAt, randomAt, slopeAt, trailDistance } from '../geo/height';
 import { rivers, waterSurfaceAt } from '../geo/geo-core';
 import { makeHouse } from './house-models';
@@ -49,6 +51,7 @@ export function populateCreekIdyll(group: T.Group, wind: WindUniforms) {
     const footingMat = new T.MeshStandardMaterial({ color: '#8f8876', roughness: .94 });
     const footingGeo = new T.BoxGeometry(1, 1, 1).translate(0, .5, 0);
     const houseModel = makeHouse('cottage', 0);
+    const cottageMeshes: Array<{ shell: T.Mesh; glow?: T.Mesh }> = [];
 
     for (const [idx, spec] of cottageSpecs.entries()) {
         let px = spec.x, pz = spec.z;
@@ -78,10 +81,12 @@ export function populateCreekIdyll(group: T.Group, wind: WindUniforms) {
         const shell = new T.Mesh(houseModel.shell, wallMat);
         shell.castShadow = shell.receiveShadow = true;
         house.add(shell);
+        let glow: T.Mesh | undefined;
         if (houseModel.glow) {
-            const glow = new T.Mesh(houseModel.glow, glassMat);
+            glow = new T.Mesh(houseModel.glow, glassMat);
             house.add(glow);
         }
+        cottageMeshes.push({ shell, glow });
         house.name = `creek-idyll-cottage-${idx}`;
         idyll.add(house);
 
@@ -96,9 +101,31 @@ export function populateCreekIdyll(group: T.Group, wind: WindUniforms) {
         const colR = Math.max(halfX, halfZ) * .92;
         addSolid(group, { minX: px - colR, maxX: px + colR, minY: base - .25, maxY: floor + spec.h * .55, minZ: pz - colR, maxZ: pz + colR, radius: colR });
     }
+    const isGuofeng = readArtStyle() === 'guofeng';
+    if (isGuofeng && typeof window !== 'undefined') {
+        const loader = new GLTFLoader();
+        const url = new URL('../../../resource/architecture/guofeng_house_cottage.glb', import.meta.url).href;
+        void loader.loadAsync(url).then(gltf => {
+            let nextShell: T.BufferGeometry | undefined;
+            let nextGlow: T.BufferGeometry | undefined;
+            gltf.scene.traverse(o => {
+                if (!(o instanceof T.Mesh)) return;
+                const g = o.geometry.clone();
+                g.computeBoundingBox();
+                g.computeBoundingSphere();
+                if (o.name.toLowerCase().includes('shell')) nextShell = g;
+                else if (o.name.toLowerCase().includes('glow')) nextGlow = g;
+            });
+            if (!nextShell) return;
+            for (const item of cottageMeshes) {
+                item.shell.geometry = nextShell;
+                if (item.glow && nextGlow) item.glow.geometry = nextGlow;
+            }
+        }).catch(err => console.warn('Failed to load guofeng creek cottage GLB:', err));
+    }
 
     // 2) Framing lush broadleaf trees behind & beside both thatched cottages.
-    const leafTex = makeLeafTexture();
+    const leafTex = makeLeafTexture(false, isGuofeng);
     const leafMat = new T.MeshLambertMaterial({
         map: leafTex, alphaTest: .36, alphaToCoverage: true, vertexColors: true, side: T.DoubleSide,
     });

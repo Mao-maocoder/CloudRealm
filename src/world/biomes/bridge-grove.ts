@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { readArtStyle } from '../../config/settings';
 import { bridgeArtEnabled, bridgeReflectionLayer, bridgeTrees } from '../geo/bridge-look';
 import { makeBankFlowerCluster, makeBridgeTree, makeCloverPatch, makeGrassTuft, makeLeafTexture, makeValleyShrub } from '../flora/flora-geometry';
 import { heightAt, randomAt, trailDistance } from '../geo/height';
@@ -101,10 +102,11 @@ export class BridgeGrove extends T.Group {
         });
         windify(shrubMat,wind,.14,2.6);
         const bankShrubs = new T.InstancedMesh(shrubGeo,shrubMat,clusters.length*6);
+        const isGuofeng = readArtStyle() === 'guofeng';
         const instance = new T.Object3D();
-        const fresh=new T.Color('#b6e854'), deep=new T.Color('#4a9d4e'), color=new T.Color();
-        const bloomPalette=['#ffe44d','#fffaf0','#66b8ff','#ff8db8','#be92ff'];
-        const shrubPalette=['#a4dc64','#76c872','#56ae76','#92d86a'];
+        const fresh=new T.Color(isGuofeng ? '#5d7342' : '#b6e854'), deep=new T.Color(isGuofeng ? '#2c4a35' : '#4a9d4e'), color=new T.Color();
+        const bloomPalette=isGuofeng ? ['#eeeae0','#e2d49a','#f2efe6','#9acbb8'] : ['#ffe44d','#fffaf0','#66b8ff','#ff8db8','#be92ff'];
+        const shrubPalette=isGuofeng ? ['#4b6140','#3d543c','#5a6842','#344a3a'] : ['#a4dc64','#76c872','#56ae76','#92d86a'];
         const rockBase = rock.boundingBox!;
         const rockBox = new T.Box3();
         let count = 0;
@@ -146,7 +148,7 @@ export class BridgeGrove extends T.Group {
                 sedges.setMatrixAt(sedgeCount,instance.matrix);
                 sedges.setColorAt(sedgeCount++,color.copy(fresh).lerp(deep,randomAt(i,centerZ,218)));
             }
-            for (let i=0;i<22;i++) {
+            for (let i=0;i<(isGuofeng ? 8 : 22);i++) {
                 const z=centerZ+(randomAt(i,centerZ,231)-.5)*30;
                 const x=riverX(z)+side*(21.8+randomAt(i,centerZ,232)*15.0);
                 const y=heightAt(x,z);
